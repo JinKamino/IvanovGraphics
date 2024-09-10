@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    
+    <title>Lab01</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+        #controls {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="functionSelect">func:</label>
+        <select id="functionSelect">
+            <option value="cs">cosx^5+sinx^7</option>
+            <option value="gaussian">gaussian</option>
+            <option value="sin">sin(x)</option>
+            <option value="x2">x^2</option>
+            <option value="x3">x^3</option>
+        </select>
+        <br><br>
+        <label for="rangeMin">from:</label>
+        <input type="number" id="rangeMin" value="-5" step="0.5">
+        <label for="rangeMax">to:</label>
+        <input type="number" id="rangeMax" value="5" step="0.5">
+    </div>
+
+    <canvas id="graphCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById("graphCanvas");
+        const ctx = canvas.getContext("2d");
+        const functionSelect = document.getElementById("functionSelect");
+        const rangeMinInput = document.getElementById("rangeMin");
+        const rangeMaxInput = document.getElementById("rangeMax");
+
+        //almost full screen canvas
+        function resize() {
+            canvas.width = window.innerWidth - 20;
+            canvas.height = window.innerHeight - 100;
+            drawGraph();
+        }
+
+        window.addEventListener('resize', resize);
+        functionSelect.addEventListener('change', drawGraph);
+        rangeMinInput.addEventListener('input', drawGraph);
+        rangeMaxInput.addEventListener('input', drawGraph);
+
+        // funcs
+        const functions = {
+            'sin': Math.sin,
+            'x2': x => x * x,
+            'x3': x => x*x*x,
+            'cs': x => Math.pow(Math.cos(x),5)+Math.pow(Math.sin(x),7),
+            'gaussian':x => Math.pow( Math.E,-1*x*x)
+            };
+
+        // main func
+        function drawGraph() {
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const selectedFunction = functions[functionSelect.value];
+            const rangeMin = parseFloat(rangeMinInput.value);
+            const rangeMax = parseFloat(rangeMaxInput.value);
+
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            //width scale
+            const step = 0.01;  
+            const scaleX = width / (rangeMax - rangeMin);
+
+            // min 
+            let funcMin = Infinity;
+            let funcMax = -Infinity;
+            for (let x = rangeMin; x <= rangeMax; x += step) {
+                const y = selectedFunction(x);
+                if (y < funcMin) funcMin = y;
+                if (y > funcMax) funcMax = y;
+            }
+
+            // height scale
+            const scaleY = height / (funcMax - funcMin);
+
+            drawAxes(width, height, rangeMin, rangeMax, funcMin, funcMax);
+
+            ctx.beginPath();
+            for (let x = rangeMin; x <= rangeMax; x += step) {
+                const y = selectedFunction(x);
+                const canvasX = (x - rangeMin) * scaleX; // масштаб для икса
+                const canvasY = height - ((y - funcMin) * scaleY);  // масштаб для игрика
+                if (x === rangeMin) {
+                    ctx.moveTo(canvasX, canvasY);
+                } else {
+                    ctx.lineTo(canvasX, canvasY);
+                }
+            }
+
+            ctx.stroke();
+        }
+
+        // axes func
+        function drawAxes(width, height, rangeMin, rangeMax, funcMin, funcMax) {
+            const scaleX = width / (rangeMax - rangeMin);
+            const scaleY = height / (funcMax - funcMin);
+
+            //x
+            ctx.beginPath();
+            const zeroY = height - (-funcMin * scaleY);
+            ctx.moveTo(0, zeroY);
+            ctx.lineTo(width, zeroY);
+            ctx.stroke();
+
+            //y
+            const zeroX = -rangeMin * scaleX;
+            ctx.beginPath();
+            ctx.moveTo(zeroX, 0);
+            ctx.lineTo(zeroX, height);
+            ctx.stroke();
+        }
+
+        //start
+        resize();
+    </script>
+</body>
+</html>
