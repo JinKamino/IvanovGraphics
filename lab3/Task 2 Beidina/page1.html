@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Алгоритмы рисования отрезков</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas" width="600" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        function drawBresenham(x0, y0, x1, y1) {
+            const dx = x1 - x0;
+            const dy = y1 - y0;
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
+            const sx = (dx > 0) ? 1 : -1;
+            const sy = (dy > 0) ? 1 : -1;
+            let err = absDx - absDy;
+
+            while (true) {
+                ctx.fillRect(x0, y0, 1, 1); // Рисуем пиксель
+                if (x0 === x1 && y0 === y1) break;
+                const e2 = err * 2;
+                if (e2 > -absDy) {
+                    err -= absDy;
+                    x0 += sx;
+                }
+                if (e2 < absDx) {
+                    err += absDx;
+                    y0 += sy;
+                }
+            }
+        }
+
+        function drawWu(x0, y0, x1, y1) {
+            const drawPixel = (x, y, c) => {
+                ctx.fillStyle = c;
+                ctx.fillRect(x, y, 1, 1);
+            };
+            let dx = x1 - x0; let dy = y1 - y0;
+            let gradient = dy / dx;
+            let y = y0 + gradient;
+            for (var x = x0 + 1; x <= x1 - 1; x++) {
+                ctx.fillRect(x, y, 1, 1); // Рисуем пиксель
+                ctx.fillRect(x, y+1, 1, 1); // Рисуем пиксель
+                y += gradient;
+            }
+            // const dx = x1 - x0;
+            // const dy = y1 - y0;
+            // const gradient = dy / dx;
+
+            // if (dx < 0) {
+            //     [x0, x1] = [x1, x0];
+            //     [y0, y1] = [y1, y0];
+            // }
+
+            // const startX = Math.round(x0);
+            // const endX = Math.round(x1);
+            // const yStart = y0 + gradient * (startX - x0);
+            // const yEnd = y0 + gradient * (endX - x0);
+
+            // for (let x = startX; x <= endX; x++) {
+            //     const y = Math.floor(yStart);
+            //     const alpha = (1 - (yStart - y));
+            //     ctx.fillRect(x, y, 1, 1);
+            //     ctx.fillRect(x, y+1, 1, 1);
+
+            //     yStart += gradient;
+            // }
+        }
+
+        // Пример использования алгоритмов:
+        drawBresenham(50, 50, 200, 250); // Рисуем отрезок Брезенхема
+        drawWu(150, 50, 300, 250); // Рисуем отрезок ВУ
+    </script>
+</body>
+
+</html>
