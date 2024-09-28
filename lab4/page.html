@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генерация полигонов</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <button id="clear">Очистить сцену</button>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let polygons = [];
+        let currentPoints = [];
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            currentPoints.push({ x, y });
+            drawPolygons();
+        });
+
+        canvas.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            if (currentPoints.length > 2) {
+                polygons.push(getConvexHull(currentPoints));
+                currentPoints = [];
+            }
+            drawPolygons();
+        });
+
+        function drawPolygons() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            polygons.forEach(polygon => {
+                ctx.beginPath();
+                ctx.moveTo(polygon[0].x, polygon[0].y);
+                polygon.forEach(point => {
+                    ctx.lineTo(point.x, point.y);
+                });
+                ctx.closePath();
+                ctx.strokeStyle = 'blue';
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
+                ctx.fill();
+            });
+            currentPoints.forEach(point => drawPoint(point.x, point.y));
+            for (let i=1;i<currentPoints.length;i+=1){
+                drawLine(currentPoints[i - 1], currentPoints[i]);
+            }
+        }
+
+        function drawPoint(x, y) {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        function drawLine(point1, point2) {
+            ctx.beginPath();
+            ctx.moveTo(point1.x, point1.y);
+            ctx.lineTo(point2.x, point2.y);
+            ctx.strokeStyle = 'green';
+            ctx.stroke();
+        }
+
+        function getConvexHull(points) {
+            points = points.slice().sort((a, b) => a.x - b.x);
+            const lower = [];
+            for (const p of points) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+                    lower.pop();
+                }
+                lower.push(p);
+            }
+
+            const upper = [];
+            for (let i = points.length - 1; i >= 0; i--) {
+                const p = points[i];
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+                    upper.pop();
+                }
+                upper.push(p);
+            }
+            upper.pop();
+            lower.pop();
+            return lower.concat(upper);
+        }
+
+        function cross(o, a, b) {
+            return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+        }
+
+        document.getElementById('clear').addEventListener('click', () => {
+            polygons = [];
+            currentPoints = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+    </script>
+</body>
+
+</html>
