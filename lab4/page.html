@@ -9,12 +9,93 @@
         canvas {
             border: 1px solid black;
         }
+
+
+        button 
+        {
+            margin-top: 5px;
+        }
+        .input_x_class
+        {
+            margin-bottom: 5px;
+        }
+        .angle_input_class
+        {
+            margin-top: 5px;
+        }
+        .input_x_coord_class
+        {
+            margin-bottom: 5px;
+            margin-top: 5px;
+        } 
+        .x_scale_input_class
+        {
+            margin-bottom: 5px;
+            margin-top: 5px;
+        } 
+        .x_coord_scale_input_class
+        {
+            margin-top: 5px;
+            margin-bottom: 5px;
+        }
+
+
     </style>
 </head>
 
 <body>
     <canvas id="canvas" width="800" height="600"></canvas>
     <button id="clear">Очистить сцену</button>
+
+
+    <div class = "input_x_class">
+        <label for = "x_input">Введите смещение по x (dx)</label>
+        <input type = "number" id = "x_input" min = "0" max = "400">
+    </div>
+    <div class = "input_y_class">
+        <label for = "y_input">Введите смещение по y (dy)</label>
+        <input type = "number" id = "y_input" min = "0" max = "400">
+    </div>
+    <button onclick="start_moving_polygon()">Сместить на dx, dy</button>
+    <button onclick="start_moving_polygon_neg()">Сместить на -dx, -dy</button>
+    <div class = "angle_input_class">
+        <label for = "angle_input">Введите угол поворота</label>
+        <input type = "number" id = "angle_input" min = "0" max = "180">
+    </div>
+    <button onclick="start_turning_polygon()">Повернуть на phi градусов относительно центра</button>
+    <button onclick="start_turning_polygon_back()">Обратно повернуть на phi градусов относительно центра</button>
+    <div class = "input_x_coord_class">
+        <label for = "x_coord_input">Введите x-координату своей точки поворота</label>
+        <input type = "number" id = "x_coord_input" min = "0" max = "400">
+    </div>
+    <div class = "input_y_coord_class">
+        <label for = "y_coord_input">Введите y-координату своей точки поворота</label>
+        <input type = "number" id = "y_coord_input" min = "0" max = "400">
+    </div>
+    <button onclick="start_turning_around_user_dot()">Повернуть относительно своей точки на угол phi (задаётся в поле для поворота от центра)</button>
+    <button onclick="start_turning_back_around_user_dot()">Обратно повернуть относительно своей точки на угол phi (задаётся в поле для поворота от центра)</button>
+    <div class = "x_scale_input_class">
+        <label for = "x_scale_input">Введите коэффициент сжатия/растяжения по x</label>
+        <input type = "number" id = "x_scale_input">
+    </div>
+    <div class = "y_scale_input_class">
+        <label for = "y_scale_input">Введите коэффициент сжатия/растяжения по y</label>
+        <input type = "number" id = "y_scale_input">
+    </div>
+    <button onclick="start_scaling_polygon()">Растянуть полигон в kx, ky раз относительно центра</button>
+    <button onclick="start_scaling_back_polygon()">Сжать полигон в kx, ky раз относительно центра</button>
+    <div class = "x_coord_scale_input_class">
+        <label for = "x_coord_scale_input">Введите коэффициент сжатия/растяжения по y</label>
+        <input type = "number" id = "x_coord_scale_input">
+    </div>
+    <div class = "y_coord_scale_input_class">
+        <label for = "y_coord_scale_input">Введите коэффициент сжатия/растяжения по y</label>
+        <input type = "number" id = "y_coord_scale_input">
+    </div>
+    <button onclick="start_scaling_polygon_around_user_dot()">Растянуть полигон в kx, ky раз относительно точки заданной пользователем</button>
+    <button onclick="start_scaling_back_polygon_around_user_dot()">Сжать полигон в kx, ky раз относительно точки заданной пользователем</button>
+
+
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -79,6 +160,185 @@
             currentPoints = [];
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         });
+
+
+
+
+        function start_moving_polygon()
+        {
+            x = Number(document.getElementById("x_input").value);
+            y = Number(document.getElementById("y_input").value);
+            move_polygon(x, y);
+        }
+        function start_moving_polygon_neg()
+        {
+            x = -Number(document.getElementById("x_input").value);
+            y = -Number(document.getElementById("y_input").value);
+            move_polygon(x, y);
+        }
+        function move_polygon(dx, dy) 
+        {
+            const translationMatrix = [
+                [1, 0, 0],
+                [0, 1, 0],
+                [dx, dy, 1]
+            ];
+
+            polygons = polygons.map(polygon => {
+                return polygon.map(point => {
+                    const [x, y] = [point.x, point.y];
+                    const newPoint = [
+                        x * translationMatrix[0][0] + y * translationMatrix[1][0] + translationMatrix[2][0],
+                        x * translationMatrix[0][1] + y * translationMatrix[1][1] + translationMatrix[2][1]
+                    ];
+                    return { x: newPoint[0], y: newPoint[1] };
+                });
+            });
+            drawPolygons();
+        }
+        function start_turning_polygon()
+        {
+            angle = Number(document.getElementById("angle_input").value);
+            turn_polygon(angle, canvas.width / 2, canvas.height / 2);
+        }
+        function start_turning_polygon_back()
+        {
+            angle = Number(document.getElementById("angle_input").value);
+            turn_polygon_back(angle, canvas.width / 2, canvas.height / 2);
+        }
+        function start_turning_around_user_dot()
+        {
+            x_coord = Number(document.getElementById("x_coord_input").value);
+            y_coord = Number(document.getElementById("y_coord_input").value);
+            angle = Number(document.getElementById("angle_input").value);
+            turn_polygon(angle, x_coord, y_coord);
+        }
+        function start_turning_back_around_user_dot()
+        {
+            x_coord = Number(document.getElementById("x_coord_input").value);
+            y_coord = Number(document.getElementById("y_coord_input").value);
+            angle = Number(document.getElementById("angle_input").value);
+            turn_polygon_back(angle, x_coord, y_coord);
+        }
+        function start_scaling_polygon()
+        {
+            kx = Number(document.getElementById("x_scale_input").value);
+            ky = Number(document.getElementById("y_scale_input").value);
+            scale_polygon(kx, ky, canvas.width / 2, canvas.height / 2);
+        }
+        function start_scaling_back_polygon()
+        {
+            kx = Number(document.getElementById("x_scale_input").value);
+            ky = Number(document.getElementById("y_scale_input").value);
+            scale_polygon_back(kx, ky, canvas.width / 2, canvas.height / 2);
+        }
+        function start_scaling_polygon_around_user_dot()
+        {
+            kx = Number(document.getElementById("x_scale_input").value);
+            ky = Number(document.getElementById("y_scale_input").value);
+            X = Number(document.getElementById("x_coord_scale_input").value);
+            Y = Number(document.getElementById("y_coord_scale_input").value);
+            scale_polygon(kx, ky, X, Y);
+        }
+        function start_scaling_back_polygon_around_user_dot()
+        {
+            kx = Number(document.getElementById("x_scale_input").value);
+            ky = Number(document.getElementById("y_scale_input").value);
+            X = Number(document.getElementById("x_coord_scale_input").value);
+            Y = Number(document.getElementById("y_coord_scale_input").value);
+            scale_polygon_back(kx, ky, X, Y);
+        }
+        function turn_polygon(angle, X, Y)
+        {
+            const cos = Math.cos(angle * Math.PI / 180);
+            const sin = Math.sin(angle * Math.PI / 180);
+            const rotationMatrix = [
+                [cos, -sin, 0],
+                [sin, cos, 0],
+                [0, 0, 1]
+            ];
+
+            polygons = polygons.map(polygon => {
+                return polygon.map(point => {
+                    const x = point.x - X;
+                    const y = point.y - Y;
+                    const newPoint = [
+                        x * rotationMatrix[0][0] + y * rotationMatrix[1][0] + rotationMatrix[2][0] + X,
+                        x * rotationMatrix[0][1] + y * rotationMatrix[1][1] + rotationMatrix[2][1] + Y
+                    ];
+                    return { x: newPoint[0], y: newPoint[1] };
+                });
+            });
+            drawPolygons();
+        }
+        function turn_polygon_back(angle, X, Y)
+        {
+            const cos = Math.cos(angle * Math.PI / 180);
+            const sin = Math.sin(angle * Math.PI / 180);
+            const rotationMatrix = [
+                [cos, sin, 0],
+                [-sin, cos, 0],
+                [0, 0, 1]
+            ];
+
+            polygons = polygons.map(polygon => {
+                return polygon.map(point => {
+                    const x = point.x - X;
+                    const y = point.y - Y;
+                    const newPoint = [
+                        x * rotationMatrix[0][0] + y * rotationMatrix[1][0] + rotationMatrix[2][0] + X,
+                        x * rotationMatrix[0][1] + y * rotationMatrix[1][1] + rotationMatrix[2][1] + Y
+                    ];
+                    return { x: newPoint[0], y: newPoint[1] };
+                });
+            });
+            drawPolygons();
+        }
+        function scale_polygon(kx, ky, X, Y)
+        {
+            const scaleMatrix = [
+                [1/kx, 0, 0],
+                [0, 1/ky, 0],
+                [0, 0, 1]
+            ];
+
+            polygons = polygons.map(polygon => {
+                return polygon.map(point => {
+                    const x = point.x - X;
+                    const y = point.y - Y;
+                    const newPoint = [
+                        x * scaleMatrix[0][0] + y * scaleMatrix[1][0] + scaleMatrix[2][0] + X,
+                        x * scaleMatrix[0][1] + y * scaleMatrix[1][1] + scaleMatrix[2][1] + Y
+                    ];
+                    return { x: newPoint[0], y: newPoint[1] };
+                });
+            });
+            drawPolygons();
+        }
+        function scale_polygon_back(kx, ky, X, Y)
+        {
+            const scaleMatrix = [
+                [kx, 0, 0],
+                [0, ky, 0],
+                [0, 0, 1]
+            ];
+
+            polygons = polygons.map(polygon => {
+                return polygon.map(point => {
+                    const x = point.x - X;
+                    const y = point.y - Y;
+                    const newPoint = [
+                        x * scaleMatrix[0][0] + y * scaleMatrix[1][0] + scaleMatrix[2][0] + X,
+                        x * scaleMatrix[0][1] + y * scaleMatrix[1][1] + scaleMatrix[2][1] + Y
+                    ];
+                    return { x: newPoint[0], y: newPoint[1] };
+                });
+            });
+            drawPolygons();
+        }
+
+
+        
     </script>
 </body>
 
