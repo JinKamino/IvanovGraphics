@@ -33,7 +33,7 @@
         canvas.addEventListener('contextmenu', (event) => {
             event.preventDefault();
             if (currentPoints.length > 2) {
-                polygons.push(getConvexHull(currentPoints));
+                polygons.push(currentPoints);
                 currentPoints = [];
             }
             drawPolygons();
@@ -44,13 +44,13 @@
             polygons.forEach(polygon => {
                 ctx.beginPath();
                 ctx.moveTo(polygon[0].x, polygon[0].y);
-                polygon.forEach(point => {
-                    ctx.lineTo(point.x, point.y);
-                });
+                for (let j = 1; j < polygon.length; j++) {
+                    ctx.lineTo(polygon[j].x, polygon[j].y);
+                }
                 ctx.closePath();
                 ctx.strokeStyle = 'blue';
+                ctx.fillStyle = 'rgba(0, 0, 255, 0.4)';
                 ctx.stroke();
-                ctx.fillStyle = 'rgba(0, 0, 255, 0.1)';
                 ctx.fill();
             });
             currentPoints.forEach(point => drawPoint(point.x, point.y));
@@ -72,33 +72,6 @@
             ctx.lineTo(point2.x, point2.y);
             ctx.strokeStyle = 'green';
             ctx.stroke();
-        }
-
-        function getConvexHull(points) {
-            points = points.slice().sort((a, b) => a.x - b.x);
-            const lower = [];
-            for (const p of points) {
-                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-                    lower.pop();
-                }
-                lower.push(p);
-            }
-
-            const upper = [];
-            for (let i = points.length - 1; i >= 0; i--) {
-                const p = points[i];
-                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-                    upper.pop();
-                }
-                upper.push(p);
-            }
-            upper.pop();
-            lower.pop();
-            return lower.concat(upper);
-        }
-
-        function cross(o, a, b) {
-            return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
         }
 
         document.getElementById('clear').addEventListener('click', () => {
