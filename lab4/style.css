@@ -1,0 +1,108 @@
+canvas {
+    border: 1px solid black;
+    grid-row: 1;
+    grid-column: 1;
+}
+
+
+button {
+    margin-top: 14px;
+    height: 25px;
+}
+
+.input_x_class {
+
+    grid-row: 1;
+    grid-column: 1;
+    width: 100px;
+    margin-top: 30px;
+}
+
+.input_y_class {
+
+    grid-row: 1;
+    grid-column: 2;
+    width: 100px;
+    margin-top: 30px;
+}
+
+.angle_input_class {
+
+    grid-row: 1;
+    grid-column: 3;
+    width: 100px;
+    margin-top: 30px;
+}
+
+.input_x_coord_class {
+    grid-row: 1;
+    grid-column: 4;
+    width: 100px;
+    margin-top: 30px;
+}
+
+.input_y_coord_class {
+    grid-row: 1;
+    grid-column: 5;
+    width: 100px;
+    margin-top: 30px;
+}
+
+.x_scale_input_class {
+    grid-row: 1;
+    grid-column: 6;
+    /* width: 100px; */
+    margin-top: auto;
+}
+
+.y_scale_input_class {
+    grid-row: 1;
+    grid-column: 7;
+    /* width: 100px; */
+    margin-top: auto;
+}
+
+
+.x_coord_scale_input_class {
+    grid-row: 1;
+    grid-column: 8;
+    /* width: 100px; */
+    margin-top: auto;
+}
+
+.y_coord_scale_input_class {
+    grid-row: 1;
+    grid-column: 9;
+    /* width: 100px; */
+    margin-top: auto;
+}
+
+.wrapper {
+    margin-left: 250px;
+    display: grid;
+    grid-template-columns: repeat(10, 140px);
+    /* grid-gap: 35px; */
+    /* width: 800px; */
+    /* grid-auto-rows: minmax(50px, 100px); */
+}
+
+input {
+    width: 130px;
+}
+
+#clear {
+    /* margin-top: 30px; */
+    margin-top: auto;
+    color: brown;
+}
+
+button {
+    width: 138px;
+}
+P{
+    margin-left:250px;
+    font-size: 18px;
+}
+#res{
+    margin-left: 250px;
+}
