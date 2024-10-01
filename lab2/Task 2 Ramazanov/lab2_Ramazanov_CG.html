@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang = "en">
+    <!--для того чтобы данная программа работала необходимо скачать расширение Live Server для Visual Studio Code.-->
+    <!--после его скачивания справа снизу появится кнопка Go Live, по нажатии на которой программа выполнится корректно-->
+    <head>
+        <meta charset = "UTF-8">
+        <title> lab2_Ramazanov_CG </title>
+        <style>
+            .images
+            {
+                display: block;
+                margin-top: 20px;
+            }
+            canvas
+            {
+                display: block;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <H1> Разложение RGB изображения по красному, зелёному и синему спектрам </H1>
+        <div class = "images">
+            <img id = "original_image" src = "IS-2.jpg">
+            <img id = "red_spectrum" src = "">
+            <img id = "green_spectrum" src = "">
+            <img id = "blue_spectrum" src = "">
+        </div>
+        <canvas id = "red_histogram"></canvas>
+        <canvas id = "green_histogram"></canvas>
+        <canvas id = "blue_histogram"></canvas>
+        <script src="script.js"></script>
+    </body>
+</html>
