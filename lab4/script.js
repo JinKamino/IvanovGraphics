@@ -117,13 +117,23 @@ const canvas = document.getElementById('canvas');
             });
             drawPolygons();
         }
+		function find_center(polygons)
+		{
+			let sumX = 0, sumY = 0;
+			polygons[0].forEach(point => {sumX += point.x; sumY+=point.y;});
+			return  [Math.round(sumX / polygons[0].length), Math.round(sumY / polygons[0].length)];
+		}
         function start_turning_polygon() {
             angle = Number(document.getElementById("angle_input").value);
-            turn_polygon(angle, canvas.width / 2, canvas.height / 2);
+			let center_x = find_center(polygons)[0];
+			let center_y = find_center(polygons)[1];
+            turn_polygon(angle, center_x, center_y);
         }
         function start_turning_polygon_back() {
             angle = Number(document.getElementById("angle_input").value);
-            turn_polygon_back(angle, canvas.width / 2, canvas.height / 2);
+			let center_x = find_center(polygons)[0];
+			let center_y = find_center(polygons)[1];
+            turn_polygon_back(angle, center_x, center_y);
         }
         function start_turning_around_user_dot() {
             x_coord = Number(document.getElementById("x_coord_input").value);
@@ -140,12 +150,16 @@ const canvas = document.getElementById('canvas');
         function start_scaling_polygon() {
             kx = Number(document.getElementById("x_scale_input").value);
             ky = Number(document.getElementById("y_scale_input").value);
-            scale_polygon(kx, ky, canvas.width / 2, canvas.height / 2);
+			let center_x = find_center(polygons)[0];
+			let center_y = find_center(polygons)[1];
+            scale_polygon(kx, ky, center_x, center_y);
         }
         function start_scaling_back_polygon() {
             kx = Number(document.getElementById("x_scale_input").value);
             ky = Number(document.getElementById("y_scale_input").value);
-            scale_polygon_back(kx, ky, canvas.width / 2, canvas.height / 2);
+			let center_x = find_center(polygons)[0];
+			let center_y = find_center(polygons)[1];
+            scale_polygon_back(kx, ky, center_x, center_y);
         }
         function start_scaling_polygon_around_user_dot() {
             kx = Number(document.getElementById("x_scale_input").value);
@@ -182,6 +196,7 @@ const canvas = document.getElementById('canvas');
                 });
             });
             drawPolygons();
+			drawPoint(X, Y);
         }
         function turn_polygon_back(angle, X, Y) {
             const cos = Math.cos(angle * Math.PI / 180);
@@ -204,6 +219,7 @@ const canvas = document.getElementById('canvas');
                 });
             });
             drawPolygons();
+			drawPoint(X, Y);
         }
         function scale_polygon(kx, ky, X, Y) {
             const scaleMatrix = [
