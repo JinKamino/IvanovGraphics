@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Многогранник на Canvas</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+        #scale{
+            width:25px;
+            height:25px;
+            font-size: 15px;
+        }
+    </style>
+    <script src="point-script.js"></script>
+    <script src="polygon-script.js"></script>
+    <script src="polyhedron-script.js"></script>
+</head>
+
+<body>
+    <canvas id="canvas" width="1000" height="800"></canvas>
+    <select id="reflect" onchange="reflection()">
+        <option value="x">Относительно X</option>
+        <option value="y">Относительно Y</option>
+        <option value="z">Относительно Z</option>
+    </select>
+    <button id="scale" value="+" onclick="scale_bigger()">+</button>
+    <button id="scale" value="-" onclick="scale_smaller()">-</button>
+    <button onclick="change_projection()">Изменить проекцию</button>
+    <script>
+        // Создаем тетраэдр
+        const tetrahedron = new Polyhedron([
+            new Polygon([new Point(100, 100, 100), new Point(100, -100, -100), new Point(-100, 100, -100)]),
+            new Polygon([new Point(100, 100, 100), new Point(100, -100, -100), new Point(-100, -100, 100)]),
+            new Polygon([new Point(100, 100, 100), new Point(-100, 100, -100), new Point(-100, -100, 100)]),
+            new Polygon([new Point(-100, 100, -100), new Point(100, -100, -100), new Point(-100, -100, 100)]),
+        ]);
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let projection = 'perspective';
+        const ref = document.getElementById('reflect');
+        draw();
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            tetrahedron.draw(ctx, projection);
+        }
+
+        function reflection(){
+            tetrahedron.reflect(ref.value); // Отражение
+            draw();
+        }
+
+        function scale_bigger(){
+            tetrahedron.scale(1.5);
+            draw();
+        }
+        function scale_smaller() {
+            tetrahedron.scale(0.5);
+            draw();
+        }
+
+        function change_projection(){
+            projection = projection === 'perspective' ? 'axonometric' : 'perspective';
+            draw();
+        }
+    </script>
+</body>
+
+</html>
