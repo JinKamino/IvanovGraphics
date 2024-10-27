@@ -31,14 +31,22 @@
     <button id="scale" value="-" onclick="scale_smaller()">-</button>
     <button onclick="change_projection()">Изменить проекцию</button>
     <script>
-        // Создаем тетраэдр
-        const tetrahedron = new Polyhedron([
+         /*const tetrahedron = new Polyhedron([
             new Polygon([new Point(100, 100, 100), new Point(100, -100, -100), new Point(-100, 100, -100)]),
             new Polygon([new Point(100, 100, 100), new Point(100, -100, -100), new Point(-100, -100, 100)]),
             new Polygon([new Point(100, 100, 100), new Point(-100, 100, -100), new Point(-100, -100, 100)]),
             new Polygon([new Point(-100, 100, -100), new Point(100, -100, -100), new Point(-100, -100, 100)]),
-        ]);
+        ]);*/
 
+        // Создаем куб
+        const tetrahedron = new Polyhedron([
+            new Polygon([new Point(0, 100, 0), new Point(100, 100, 0), new Point(100, 100, 100), new Point(0, 100, 100)]),
+            new Polygon([new Point(100, 100, 0), new Point(100, 100, 100), new Point(100, 0, 100), new Point(100, 0, 0)]),
+            new Polygon([new Point(0, 100, 0), new Point(100, 100, 0), new Point(100, 0, 0), new Point(0, 0, 0)]),
+            new Polygon([new Point(0, 100, 100), new Point(100, 100, 100), new Point(100, 0, 100), new Point(0, 0, 100)]),
+            new Polygon([new Point(0, 100, 0), new Point(0, 100, 100), new Point(0, 0, 100), new Point(0, 0, 0)]),
+            new Polygon([new Point(0, 0, 0), new Point(100, 0, 0), new Point(100, 0, 100), new Point(0, 0, 100)]),
+        ]);
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         let projection = 'perspective';
