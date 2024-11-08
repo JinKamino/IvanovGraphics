@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyhedron Rotation and Projection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #000;
+            background-color: #fff;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        .controls input, .controls select {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <div class="controls">
+        <label>Axis: <select id="axis">
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+        </select></label>
+        <label>Angle: <input type="number" id="angle" value="45"></label>
+        <button onclick="rotateAroundAxis()">Rotate Around Axis</button>
+        <br>
+        <label>Point 1 (x, y, z): <input type="text" id="point1" value="1,0,0"></label>
+        <label>Point 2 (x, y, z): <input type="text" id="point2" value="0,1,0"></label>
+        <label>Angle: <input type="number" id="angle2" value="45"></label>
+        <button onclick="rotateAroundLine()">Rotate Around Line</button>
+        <br>
+        <label>Projection: <select id="projection">
+            <option value="perspective">Perspective</option>
+            <option value="axonometric">Axonometric</option>
+        </select></label>
+        <br>
+        <label>Polyhedron: <select id="polyhedron">
+            <option value="tetrahedron">Tetrahedron</option>
+            <option value="hexahedron">Hexahedron</option>
+            <option value="octahedron">Octahedron</option>
+        </select></label>
+        <br>
+        <label>Scale (mx, my, mz): <input type="text" id="scale" value="1,1,1"></label>
+        <button onclick="applyScale()">Apply Scale</button>
+        <br>
+        <label>Scale: <input type="number" id="scale_center" value="1"></label>
+        <button onclick="applyScaleCenter()">Apply Scale Around Center</button>
+        <br>
+        <label>Axis: <select id="axis_reflect">
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+        </select></label>
+        <button onclick="reflectAxis()">Reflect Around Axis</button>
+        <br>
+        <label>Translate (dx, dy, dz): <input type="text" id="translation" value="0,0,0"></label>
+        <button onclick="applyTranslate()">Apply Translation</button>
+        <br>
+        <label>Rotate (dx, dy, dz): <input type="text" id="rotation" value="0,0,0"></label>
+        <button onclick="applyRotate()">Apply Rotation</button>
+        <br>
+        <label>Rotate Around Center (axis): <select id="axis_rotate_center">
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+        </select></label>
+        <label>Angle: <input type="number" id="angle_rotate_center" value="45"></label>
+        <button onclick="rotateAroundCenter()">Rotate Around Center</button>
+        <br>
+        <label>Camera coord X: <input type="number" id="cameraX" value="0"></label>
+        <label>Camera coord Y: <input type="number" id="cameraY" value="0"></label>
+        <label>Camera coord Z: <input type="number" id="cameraZ" value="0"></label>
+        <br>
+        <label>Camera angle X: <input type="number" id="cameraRotationX" value="0"></label>
+        <label>Camera angle Y: <input type="number" id="cameraRotationY" value="0"></label>
+        <label>Camera angle Z: <input type="number" id="cameraRotationZ" value="0"></label>
+        <br>
+        <label>Rotation Speed: <input type="number" id="rotationSpeed" value="0.01"></label>
+        <br>
+        <label>Perspective Matrix:</label>
+        <br>
+        <label>m00: <input type="number" id="m00" value="1"></label>
+        <label>m01: <input type="number" id="m01" value="0"></label>
+        <label>m02: <input type="number" id="m02" value="0"></label>
+        <label>m03: <input type="number" id="m03" value="0"></label>
+        <br>
+        <label>m10: <input type="number" id="m10" value="0"></label>
+        <label>m11: <input type="number" id="m11" value="1"></label>
+        <label>m12: <input type="number" id="m12" value="0"></label>
+        <label>m13: <input type="number" id="m13" value="0"></label>
+        <br>
+        <label>m20: <input type="number" id="m20" value="0"></label>
+        <label>m21: <input type="number" id="m21" value="0"></label>
+        <label>m22: <input type="number" id="m22" value="1"></label>
+        <label>m23: <input type="number" id="m23" value="0"></label>
+        <br>
+        <label>m30: <input type="number" id="m30" value="0"></label>
+        <label>m31: <input type="number" id="m31" value="0"></label>
+        <label>m32: <input type="number" id="m32" value="0"></label>
+        <label>m33: <input type="number" id="m33" value="1"></label>
+        <br>
+        <button id="applyButton">Apply parameters of camera</button>
+    </div>
+
+    <script>
+        class Point {
+            constructor(x, y, z) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+        }
+
+        class Polygon {
+            constructor(points) {
+                this.points = points;
+            }
+        }
+
+        class Polyhedron {
+            constructor(polygons) {
+                this.polygons = polygons;
+            }
+
+            calculateCenter() {
+                let sumX = 0, sumY = 0, sumZ = 0;
+                let count = 0;
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        sumX += point.x;
+                        sumY += point.y;
+                        sumZ += point.z;
+                        count++;
+                    });
+                });
+                return new Point(sumX / count, sumY / count, sumZ / count);
+            }
+
+            multiplyMatrixVector(matrix, vector) {
+                return matrix.map(row =>
+                    row.reduce((sum, value, index) => sum + value * vector[index], 0)
+                );
+            }
+
+            multiplyMatrices(a, b) {
+                const result = [];
+                for (let i = 0; i < a.length; i++) {
+                    result[i] = [];
+                    for (let j = 0; j < b[0].length; j++) {
+                        let sum = 0;
+                        for (let k = 0; k < a[0].length; k++) {
+                            sum += a[i][k] * b[k][j];
+                        }
+                        result[i][j] = sum;
+                    }
+                }
+                return result;
+            }
+
+            createTranslationMatrix(tx, ty, tz) {
+                return [
+                    [1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, 0],
+                    [tx, ty, tz, 1]
+                ];
+            }
+
+            createRotationMatrix(axis, angle) {
+                const rad = angle * (Math.PI / 180);
+                if (axis === 'x') {
+                    return [
+                        [1, 0, 0, 0],
+                        [0, Math.cos(rad), -Math.sin(rad), 0],
+                        [0, Math.sin(rad), Math.cos(rad), 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'y') {
+                    return [
+                        [Math.cos(rad), 0, Math.sin(rad), 0],
+                        [0, 1, 0, 0],
+                        [-Math.sin(rad), 0, Math.cos(rad), 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'z') {
+                    return [
+                        [Math.cos(rad), -Math.sin(rad), 0, 0],
+                        [Math.sin(rad), Math.cos(rad), 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                }
+            }
+
+            rotateAroundAxis(axis, angle) {
+                const center = this.calculateCenter();
+                const T_minus_A = this.createTranslationMatrix(-center.x, -center.y, -center.z);
+                const rotationMatrix = this.createRotationMatrix(axis, angle);
+                const T_A = this.createTranslationMatrix(center.x, center.y, center.z);
+
+                const combinedMatrix = this.multiplyMatrices(this.multiplyMatrices(T_minus_A, rotationMatrix), T_A);
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            rotateAroundLine(p1, p2, angle) {
+                const center = this.calculateCenter();
+                const T_minus_A = this.createTranslationMatrix(-center.x, -center.y, -center.z);
+                const T_A = this.createTranslationMatrix(center.x, center.y, center.z);
+
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const dz = p2.z - p1.z;
+                const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                const u = dx / length;
+                const v = dy / length;
+                const w = dz / length;
+
+                const rad = angle * (Math.PI / 180);
+                const rotationMatrix = [
+                    [u * u + (1 - u * u) * Math.cos(rad), u * v * (1 - Math.cos(rad)) - w * Math.sin(rad), u * w * (1 - Math.cos(rad)) + v * Math.sin(rad), 0],
+                    [u * v * (1 - Math.cos(rad)) + w * Math.sin(rad), v * v + (1 - v * v) * Math.cos(rad), v * w * (1 - Math.cos(rad)) - u * Math.sin(rad), 0],
+                    [u * w * (1 - Math.cos(rad)) - v * Math.sin(rad), v * w * (1 - Math.cos(rad)) + u * Math.sin(rad), w * w + (1 - w * w) * Math.cos(rad), 0],
+                    [0, 0, 0, 1]
+                ];
+
+                const combinedMatrix = this.multiplyMatrices(this.multiplyMatrices(T_minus_A, rotationMatrix), T_A);
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            createScaleMatrix(mx, my, mz) {
+                return [
+                    [mx, 0, 0, 0],
+                    [0, my, 0, 0],
+                    [0, 0, mz, 0],
+                    [0, 0, 0, 1]
+                ];
+            }
+
+            applyScale(mx, my, mz) {
+                const scaleMatrix = this.createScaleMatrix(mx, my, mz);
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(scaleMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            applyTranslation(dx, dy, dz) {
+                const translationMatrix = this.createTranslationMatrix(dx, dy, dz);
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(translationMatrix, [point.x + dx, point.y + dy, point.z + dz, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            applyRotation(dx, dy, dz) {
+                const rotationXMatrix = this.createRotationMatrix('x', dx);
+                const rotationYMatrix = this.createRotationMatrix('y', dy);
+                const rotationZMatrix = this.createRotationMatrix('z', dz);
+
+                const combinedMatrix = this.multiplyMatrices(rotationXMatrix, this.multiplyMatrices(rotationYMatrix, rotationZMatrix));
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            reflect(axis) {
+                let matrix;
+                if (axis === 'x') {
+                    matrix = [
+                        [1, 0, 0, 0],
+                        [0, -1, 0, 0],
+                        [0, 0, -1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'y') {
+                    matrix = [
+                        [-1, 0, 0, 0],
+                        [0, 1, 0, 0],
+                        [0, 0, -1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'z') {
+                    matrix = [
+                        [-1, 0, 0, 0],
+                        [0, -1, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                }
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(matrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            scale(factor) {
+                const center = this.calculateCenter();
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        point.x = center.x + (point.x - center.x) * factor;
+                        point.y = center.y + (point.y - center.y) * factor;
+                        point.z = center.z + (point.z - center.z) * factor;
+                    });
+                });
+            }
+        }
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let projection = 'perspective';
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        let cameraX = 0;
+        let cameraY = 0;
+        let cameraZ = 0;
+        let cameraRotationX = 0;
+        let cameraRotationY = 0;
+        let cameraRotationZ = 0;
+        let rotationSpeed = 0.01;
+        let perspectiveMatrix = [
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ];
+
+        function drawPolyhedron(polyhedron, p1, p2) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            polyhedron.polygons.forEach(polygon => {
+                ctx.beginPath();
+                polygon.points.forEach((point, index) => {
+                    let x, y;
+                    if (projection === 'perspective') {
+                        x = point.x / (1 - point.z / 200) + canvas.width / 2;
+                        y = point.y / (1 - point.z / 200) + canvas.height / 2;
+                    } else if (projection === 'axonometric') {
+                        x = (point.x - point.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
+                        y = (point.x + point.y) * Math.sin(Math.PI / 4) - point.z + canvas.height / 2;
+                    }
+                    if (index === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.closePath();
+                ctx.stroke();
+            });
+
+            if (p1 && p2) {
+                let x1, y1, x2, y2;
+                if (projection === 'perspective') {
+                    x1 = p1.x / (1 - p1.z / 200) + canvas.width / 2;
+                    y1 = p1.y / (1 - p1.z / 200) + canvas.height / 2;
+                    x2 = p2.x / (1 - p2.z / 200) + canvas.width / 2;
+                    y2 = p2.y / (1 - p2.z / 200) + canvas.height / 2;
+                } else if (projection === 'axonometric') {
+                    x1 = (p1.x - p1.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
+                    y1 = (p1.x + p1.y) * Math.sin(Math.PI / 4) - p1.z + canvas.height / 2;
+                    x2 = (p2.x - p2.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
+                    y2 = (p2.x + p2.y) * Math.sin(Math.PI / 4) - p2.z + canvas.height / 2;
+                }
+                ctx.beginPath();
+                ctx.arc(x1, y1, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x2, y2, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'blue';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = 'green';
+                ctx.stroke();
+            }
+        }
+
+        function createRotationMatrix_2(angleX, angleY, angleZ) {
+            const cosX = Math.cos(angleX);
+            const sinX = Math.sin(angleX);
+            const cosY = Math.cos(angleY);
+            const sinY = Math.sin(angleY);
+            const cosZ = Math.cos(angleZ);
+            const sinZ = Math.sin(angleZ);
+
+            const rotationX = [
+                1, 0, 0, 0,
+                0, cosX, -sinX, 0,
+                0, sinX, cosX, 0,
+                0, 0, 0, 1
+            ];
+
+            const rotationY = [
+                cosY, 0, sinY, 0,
+                0, 1, 0, 0,
+                -sinY, 0, cosY, 0,
+                0, 0, 0, 1
+            ];
+
+            const rotationZ = [
+                cosZ, -sinZ, 0, 0,
+                sinZ, cosZ, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ];
+
+            return multiplyMatrices_2(multiplyMatrices_2(rotationX, rotationY), rotationZ);
+        }
+
+        function drawCamera(angle) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const points = [];
+
+            for (const polygon of polyhedron.polygons) {
+                for (const point of polygon.points) {
+                    points.push(point);
+                }
+            }
+
+            const rotatedPoints = points.map(point => {
+                const x = point.x * Math.cos(angle) - point.z * Math.sin(angle);
+                const z = point.x * Math.sin(angle) + point.z * Math.cos(angle);
+                return { x, y: point.y, z };
+            });
+
+            const cameraRotationMatrix = createRotationMatrix_2(cameraRotationX, cameraRotationY, cameraRotationZ);
+
+            const projectedPoints = rotatedPoints.map(point => {
+                const rotatedPoint = {
+                    x: point.x * cameraRotationMatrix[0] + point.y * cameraRotationMatrix[4] + point.z * cameraRotationMatrix[8] + cameraRotationMatrix[12],
+                    y: point.x * cameraRotationMatrix[1] + point.y * cameraRotationMatrix[5] + point.z * cameraRotationMatrix[9] + cameraRotationMatrix[13],
+                    z: point.x * cameraRotationMatrix[2] + point.y * cameraRotationMatrix[6] + point.z * cameraRotationMatrix[10] + cameraRotationMatrix[14],
+                    w: point.x * cameraRotationMatrix[3] + point.y * cameraRotationMatrix[7] + point.z * cameraRotationMatrix[11] + cameraRotationMatrix[15]
+                };
+
+                const x = rotatedPoint.x * perspectiveMatrix[0] + rotatedPoint.y * perspectiveMatrix[4] + rotatedPoint.z * perspectiveMatrix[8] + perspectiveMatrix[12];
+                const y = rotatedPoint.x * perspectiveMatrix[1] + rotatedPoint.y * perspectiveMatrix[5] + rotatedPoint.z * perspectiveMatrix[9] + perspectiveMatrix[13];
+                const z = rotatedPoint.x * perspectiveMatrix[2] + rotatedPoint.y * perspectiveMatrix[6] + rotatedPoint.z * perspectiveMatrix[10] + perspectiveMatrix[14];
+                const w = rotatedPoint.x * perspectiveMatrix[3] + rotatedPoint.y * perspectiveMatrix[7] + rotatedPoint.z * perspectiveMatrix[11] + perspectiveMatrix[15];
+
+                return {
+                    x: centerX + (x / w - cameraX),
+                    y: centerY + (y / w - cameraY)
+                };
+            });
+
+            polyhedron.polygons.forEach(polygon => {
+                ctx.beginPath();
+                polygon.points.forEach((point, index) => {
+                    const projectedPoint = projectedPoints[points.indexOf(point)];
+                    if (index === 0) ctx.moveTo(projectedPoint.x, projectedPoint.y);
+                    else ctx.lineTo(projectedPoint.x, projectedPoint.y);
+                });
+                ctx.closePath();
+                ctx.stroke();
+            });
+        }
+
+        function multiplyMatrices_2(a, b) {
+            const result = [];
+            for (let i = 0; i < 4; i++) {
+                for (let j = 0; j < 4; j++) {
+                    let sum = 0;
+                    for (let k = 0; k < 4; k++) {
+                        sum += a[i * 4 + k] * b[k * 4 + j];
+                    }
+                    result.push(sum);
+                }
+            }
+            return result;
+        }
+
+        let angle = 0;
+        function animate() {
+            drawCamera(angle);
+            angle += rotationSpeed;
+            requestAnimationFrame(animate);
+        }
+
+        const tetrahedron = new Polyhedron([
+            new Polygon([new Point(50, 50, 50), new Point(50, -50, -50), new Point(-50, 50, -50)]),
+            new Polygon([new Point(50, 50, 50), new Point(50, -50, -50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(50, 50, 50), new Point(-50, 50, -50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(-50, 50, -50), new Point(50, -50, -50), new Point(-50, -50, 50)])
+        ]);
+
+        const hexahedron = new Polyhedron([
+            new Polygon([new Point(-50, -50, -50), new Point(-50, 50, -50), new Point(50, 50, -50), new Point(50, -50, -50)]),
+            new Polygon([new Point(-50, -50, 50), new Point(-50, 50, 50), new Point(50, 50, 50), new Point(50, -50, 50)]),
+            new Polygon([new Point(-50, -50, -50), new Point(-50, 50, -50), new Point(-50, 50, 50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(50, -50, -50), new Point(50, 50, -50), new Point(50, 50, 50), new Point(50, -50, 50)]),
+            new Polygon([new Point(-50, -50, -50), new Point(50, -50, -50), new Point(50, -50, 50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(-50, 50, -50), new Point(50, 50, -50), new Point(50, 50, 50), new Point(-50, 50, 50)])
+        ]);
+
+        const octahedron = new Polyhedron([
+            new Polygon([new Point(0, 100, 0), new Point(100, 0, 0), new Point(0, 0, 100)]),
+            new Polygon([new Point(0, 100, 0), new Point(0, 0, 100), new Point(-100, 0, 0)]),
+            new Polygon([new Point(0, 100, 0), new Point(-100, 0, 0), new Point(0, 0, -100)]),
+            new Polygon([new Point(0, 100, 0), new Point(0, 0, -100), new Point(100, 0, 0)]),
+            new Polygon([new Point(0, -100, 0), new Point(100, 0, 0), new Point(0, 0, 100)]),
+            new Polygon([new Point(0, -100, 0), new Point(0, 0, 100), new Point(-100, 0, 0)]),
+            new Polygon([new Point(0, -100, 0), new Point(-100, 0, 0), new Point(0, 0, -100)]),
+            new Polygon([new Point(0, -100, 0), new Point(0, 0, -100), new Point(100, 0, 0)])
+        ]);
+
+        let polyhedron = tetrahedron;
+
+        function rotateAroundAxis() {
+            const axis = document.getElementById('axis').value;
+            const angle = parseFloat(document.getElementById('angle').value);
+            polyhedron.rotateAroundAxis(axis, angle);
+            drawPolyhedron(polyhedron);
+        }
+
+        function rotateAroundLine() {
+            const p1 = document.getElementById('point1').value.split(',').map(parseFloat);
+            const p2 = document.getElementById('point2').value.split(',').map(parseFloat);
+            const angle = parseFloat(document.getElementById('angle2').value);
+            polyhedron.rotateAroundLine(new Point(...p1), new Point(...p2), angle);
+            drawPolyhedron(polyhedron, new Point(...p1), new Point(...p2));
+        }
+
+        function applyScale() {
+            const [mx, my, mz] = document.getElementById('scale').value.split(',').map(parseFloat);
+            polyhedron.applyScale(mx, my, mz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyScaleCenter() {
+            const factor = parseFloat(document.getElementById('scale_center').value);
+            polyhedron.scale(factor);
+            drawPolyhedron(polyhedron);
+        }
+
+        function reflectAxis() {
+            const axis = document.getElementById('axis_reflect').value;
+            polyhedron.reflect(axis);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyTranslate() {
+            const [dx, dy, dz] = document.getElementById('translation').value.split(',').map(parseFloat);
+            polyhedron.applyTranslation(dx, dy, dz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyRotate() {
+            const [dx, dy, dz] = document.getElementById('rotation').value.split(',').map(parseFloat);
+            polyhedron.applyRotation(dx, dy, dz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function rotateAroundCenter() {
+            const axis = document.getElementById('axis_rotate_center').value;
+            const angle = parseFloat(document.getElementById('angle_rotate_center').value);
+            polyhedron.rotateAroundAxis(axis, angle);
+            drawPolyhedron(polyhedron);
+        }
+
+        document.getElementById('applyButton').addEventListener('click', () => {
+            cameraX = parseFloat(document.getElementById('cameraX').value);
+            cameraY = parseFloat(document.getElementById('cameraY').value);
+            cameraZ = parseFloat(document.getElementById('cameraZ').value);
+            cameraRotationX = parseFloat(document.getElementById('cameraRotationX').value) * Math.PI / 180;
+            cameraRotationY = parseFloat(document.getElementById('cameraRotationY').value) * Math.PI / 180;
+            cameraRotationZ = parseFloat(document.getElementById('cameraRotationZ').value) * Math.PI / 180;
+            rotationSpeed = parseFloat(document.getElementById('rotationSpeed').value);
+            perspectiveMatrix = [
+                parseFloat(document.getElementById('m00').value),
+                parseFloat(document.getElementById('m01').value),
+                parseFloat(document.getElementById('m02').value),
+                parseFloat(document.getElementById('m03').value),
+                parseFloat(document.getElementById('m10').value),
+                parseFloat(document.getElementById('m11').value),
+                parseFloat(document.getElementById('m12').value),
+                parseFloat(document.getElementById('m13').value),
+                parseFloat(document.getElementById('m20').value),
+                parseFloat(document.getElementById('m21').value),
+                parseFloat(document.getElementById('m22').value),
+                parseFloat(document.getElementById('m23').value),
+                parseFloat(document.getElementById('m30').value),
+                parseFloat(document.getElementById('m31').value),
+                parseFloat(document.getElementById('m32').value),
+                parseFloat(document.getElementById('m33').value)
+            ];
+            animate();
+        });
+
+
+        document.getElementById('projection').addEventListener('change', function() {
+            projection = this.value;
+            drawPolyhedron(polyhedron);
+        });
+
+        document.getElementById('polyhedron').addEventListener('change', function() {
+            const selectedPolyhedron = this.value;
+            switch (selectedPolyhedron) {
+                case 'tetrahedron':
+                    polyhedron = tetrahedron;
+                    break;
+                case 'hexahedron':
+                    polyhedron = hexahedron;
+                    break;
+                case 'octahedron':
+                    polyhedron = octahedron;
+                    break;
+            }
+            drawPolyhedron(polyhedron);
+        });
+
+        drawPolyhedron(polyhedron);
+    </script>
+</body>
+</html>
