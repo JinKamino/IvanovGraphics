@@ -36,6 +36,7 @@
 <body>
     <canvas id="canvas" width="400" height="400"></canvas>
     <div class="controls">
+	    <input type="file" id="file-input" accept=".obj">
         <label>Axis: <select id="axis">
                 <option value="x">X</option>
                 <option value="y">Y</option>
@@ -50,9 +51,9 @@
         <button onclick="rotateAroundLine()">Rotate Around Line</button>
         <br>
         <label>Projection: <select id="projection">
-                <option value="perspective">Perspective</option>
-                <option value="axonometric">Axonometric</option>
                 <option value="parallel">Parallel</option>
+                <option value="axonometric">Axonometric</option>
+                <option value="perspective">Perspective</option>
             </select></label>
         <br>
         <label>Polyhedron: <select id="polyhedron">
@@ -355,8 +356,9 @@
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+		const fileInput = document.getElementById('file-input');
 
-        let projection = 'perspective';
+        let projection = 'parallel';
 
         function findPolygonCenter(polygon) {
             let [x, y, z] = [0, 0, 0];
@@ -395,16 +397,53 @@
             return [x, y, z];
 
         }
+		
+		function renderModel(vertices, faces) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const minX = Math.min(...vertices.map(v => v.x));
+            const maxX = Math.max(...vertices.map(v => v.x));
+            const minY = Math.min(...vertices.map(v => v.y));
+            const maxY = Math.max(...vertices.map(v => v.y));
+
+            const scaleX = canvas.width / (maxX - minX);
+            const scaleY = canvas.height / (maxY - minY);
+            const scale = Math.min(scaleX, scaleY) * 0.8;
+
+            const offsetX = (canvas.width - (maxX - minX) * scale) / 2;
+            const offsetY = (canvas.height - (maxY - minY) * scale) / 2;
+
+            ctx.beginPath();
+            faces.forEach(face => {
+                face.forEach((vertexIndex, i) => {
+                    const vertex = vertices[vertexIndex];
+                    const x = (vertex.x - minX) * scale + offsetX;
+                    const y = (maxY - vertex.y) * scale + offsetY;
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                ctx.closePath();
+            });
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+
+            vertices.forEach(vertex => {
+                const x = (vertex.x - minX) * scale + offsetX;
+                const y = (maxY - vertex.y) * scale + offsetY;
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, 2 * Math.PI);
+                ctx.fillStyle = '#f00';
+                ctx.fill();
+            });
+        }
 
 
         function drawPolyhedron(polyhedron, p1, p2) {
             let a, b, c, ab, bc, normal, skalar;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            centroids = getCentroids(polyhedron);
-            plhCenter = getPolyhedronCenter(centroids);
-            // centroids.forEach(point =>{
-            //     point -= plhCenter;
-            // });
 
             polyhedron.polygons.forEach(polygon => {
                 ctx.beginPath();
@@ -434,12 +473,7 @@
                         ab = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
                         bc = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
                         normal = [ab[1] * bc[2] - ab[2] * bc[1], ab[2] * bc[0] - ab[0] * bc[2], ab[0] * bc[1] - ab[1] * bc[0]];
-                        normXcenter = [normal[0] * centroids[index][0] + normal[1] * centroids[index][1] + normal[2] * centroids[index][2]];
-                        if (normXcenter < 0) {
-                            normal[0] *= -1;
-                            normal[1] *= -1;
-                            normal[2] *= -1;
-                        }
+                       
                         skalar = normal[2];
                     }
 
@@ -447,15 +481,12 @@
 
                 });
                 ctx.closePath();
-                if (skalar > 0) {
-                    // ctx.fillStyle = 'red';
-                    // ctx.strokeStyle = 'white';
-                    // ctx.fill();
-                    // ctx.stroke();
-                }else if(skalar <= 0){
-                    ctx.strokeStyle = 'black';
+                if (skalar < 0) {
+                    ctx.fillStyle = 'gray';
+                    ctx.fill();
                     ctx.stroke();
-                } 
+                }
+				//ctx.stroke();
 
 
             });
@@ -487,6 +518,45 @@
             new Polygon([new Point(0, -100, 0), new Point(-100, 0, 0), new Point(0, 0, -100)]),
             new Polygon([new Point(0, -100, 0), new Point(0, 0, -100), new Point(100, 0, 0)])
         ]);
+		
+		var obj_file_vertices = [];
+        var obj_file_faces = [];
+        let objPolyhedron = null;
+
+        function loadOBJFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const lines = contents.split('\n');
+
+                const vertices = [];
+                const faces = [];
+
+                lines.forEach(line => {
+                    const parts = line.trim().split(' ');
+                    if (parts[0] === 'v') {
+                        vertices.push({
+                            x: parseFloat(parts[1]),
+                            y: parseFloat(parts[2]),
+                            z: parseFloat(parts[3])
+                        });
+                    } else if (parts[0] === 'f') {
+                        const face = parts.slice(1).map(part => {
+                            const indices = part.split('/').map(Number);
+                            return indices[0] - 1;
+                        });
+                        faces.push(face);
+                    }
+                });
+                obj_file_vertices = vertices;
+                obj_file_faces = faces;
+                const polygons = faces.map(face => new Polygon(face.map(index => new Point(vertices[index].x, vertices[index].y, vertices[index].z))));
+                objPolyhedron = new Polyhedron(polygons);
+                polyhedron = objPolyhedron;
+                renderModel(vertices, faces);
+            };
+            reader.readAsText(file);
+        }
 
         let polyhedron = tetrahedron;
 
@@ -623,6 +693,13 @@
         document.getElementById('projection').addEventListener('change', function () {
             projection = this.value;
             drawPolyhedron(polyhedron);
+        });
+		
+		fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                loadOBJFile(file);
+            }
         });
 
         document.getElementById('polyhedron').addEventListener('change', function () {
