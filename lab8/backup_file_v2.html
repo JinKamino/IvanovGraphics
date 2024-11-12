@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Rotating Cube with Backface Culling</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #000;
+        }
+        .controls {
+            margin-left: 20px;
+        }
+        .controls input {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <div class="controls">
+        <input type="file" id="objFileInput" accept=".obj">
+        <button id="startButton">Start Rotation</button>
+        <button id="stopButton">Stop Rotation</button>
+        <button id="rotateXButton">Rotate X</button>
+        <button id="rotateYButton">Rotate Y</button>
+        <button id="rotateZButton">Rotate Z</button>
+        <br>
+        <label>View Vector (X, Y, Z):</label>
+        <input type="number" id="viewX" value="0" step="0.1">
+        <input type="number" id="viewY" value="0" step="0.1">
+        <input type="number" id="viewZ" value="-1" step="0.1">
+        <br>
+        <label>Scale:</label>
+        <input type="number" id="scaleInput" value="1" step="0.1">
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const rotateXButton = document.getElementById('rotateXButton');
+        const rotateYButton = document.getElementById('rotateYButton');
+        const rotateZButton = document.getElementById('rotateZButton');
+        const viewXInput = document.getElementById('viewX');
+        const viewYInput = document.getElementById('viewY');
+        const viewZInput = document.getElementById('viewZ');
+        const scaleInput = document.getElementById('scaleInput');
+        const objFileInput = document.getElementById('objFileInput');
+
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        let angleX = 0;
+        let angleY = 0;
+        let angleZ = 0;
+        let isRotating = false;
+        let object = { vertices: [], faces: [] };
+
+        const fixedRotationAngle = Math.PI / 18; // 10 degrees in radians
+
+        function parseObjFile(text) {
+            const vertices = [];
+            const faces = [];
+
+            text.split('\n').forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts[0] === 'v') {
+                    vertices.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+                } else if (parts[0] === 'f') {
+                    const face = parts.slice(1).map(part => {
+                        const indices = part.split('/').map(Number);
+                        return indices[0] - 1; // OBJ indices are 1-based
+                    });
+                    faces.push(face);
+                }
+            });
+
+            return { vertices, faces };
+        }
+
+        function rotateX(point, angle) {
+            const [x, y, z] = point;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            return [x, y * cos - z * sin, y * sin + z * cos];
+        }
+
+        function rotateY(point, angle) {
+            const [x, y, z] = point;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            return [x * cos + z * sin, y, -x * sin + z * cos];
+        }
+
+        function rotateZ(point, angle) {
+            const [x, y, z] = point;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            return [x * cos - y * sin, x * sin + y * cos, z];
+        }
+
+        function crossProduct(a, b) {
+            return [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+            ];
+        }
+
+        function dotProduct(a, b) {
+            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        }
+
+        function scalePoint(point, scale) {
+            return point.map(coord => coord * scale);
+        }
+
+        function drawObject() {
+            ctx.clearRect(0, 0, width, height);
+
+            const viewVector = [
+                parseFloat(viewXInput.value),
+                parseFloat(viewYInput.value),
+                parseFloat(viewZInput.value)
+            ];
+
+            const scale = parseFloat(scaleInput.value);
+
+            const rotatedVertices = object.vertices.map(v => rotateZ(rotateY(rotateX(v, angleX), angleY), angleZ));
+
+            object.faces.forEach(face => {
+                const [a, b, c, d] = face.map(i => rotatedVertices[i]);
+
+                if (!a || !b || !c || !d) {
+                    console.error('Face references undefined vertex:', face);
+                    return;
+                }
+
+                const edge1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                const edge2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                const normal = crossProduct(edge1, edge2);
+
+                if (dotProduct(normal, viewVector) < 0) {
+                    const points = [a, b, c, d].map(v => [
+                        centerX + v[0] * scale,
+                        centerY + v[1] * scale
+                    ]);
+
+                    ctx.beginPath();
+                    ctx.moveTo(points[0][0], points[0][1]);
+                    for (let i = 1; i < points.length; i++) {
+                        ctx.lineTo(points[i][0], points[i][1]);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = 'gray';
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            });
+
+            if (isRotating) {
+                angleX += 0.01;
+                angleY += 0.01;
+                requestAnimationFrame(drawObject);
+            }
+        }
+
+        objFileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    object = parseObjFile(e.target.result);
+                    drawObject();
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        startButton.addEventListener('click', () => {
+            isRotating = true;
+            drawObject();
+        });
+
+        stopButton.addEventListener('click', () => {
+            isRotating = false;
+        });
+
+        rotateXButton.addEventListener('click', () => {
+            angleX += fixedRotationAngle;
+            drawObject();
+        });
+
+        rotateYButton.addEventListener('click', () => {
+            angleY += fixedRotationAngle;
+            drawObject();
+        });
+
+        rotateZButton.addEventListener('click', () => {
+            angleZ += fixedRotationAngle;
+            drawObject();
+        });
+
+        // Update view vector when any of the input elements change
+        [viewXInput, viewYInput, viewZInput].forEach(input => {
+            input.addEventListener('input', drawObject);
+        });
+
+        // Update scale when the input element changes
+        scaleInput.addEventListener('input', drawObject);
+
+        // Set default object to a cube
+        object = {
+            vertices: [
+                [-1, -1, -1],
+                [ 1, -1, -1],
+                [ 1,  1, -1],
+                [-1,  1, -1],
+                [-1, -1,  1],
+                [ 1, -1,  1],
+                [ 1,  1,  1],
+                [-1,  1,  1]
+            ],
+            faces: [
+                [0, 1, 2, 3],
+                [1, 5, 6, 2],
+                [5, 4, 7, 6],
+                [4, 0, 3, 7],
+                [0, 4, 5, 1],
+                [3, 2, 6, 7]
+            ]
+        };
+
+        drawObject();
+    </script>
+</body>
+</html>
