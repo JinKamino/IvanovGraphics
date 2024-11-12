@@ -426,7 +426,9 @@
                 const polygons = faces.map(face => new Polygon(face.map(index => new Point(vertices[index].x, vertices[index].y, vertices[index].z))));
                 objPolyhedron = new Polyhedron(polygons);
                 polyhedron = objPolyhedron;
-                renderModel();
+                if (document.getElementById("view").value == 'usual')
+                    drawPolyhedron()
+                else renderModel();
             };
             reader.readAsText(file);
         }
@@ -447,19 +449,22 @@
                 for (let point of polygon.points) {
                     projectedPoints.push(projectPoint(point));
                 }
-                // Рассчитываем интенсивность цвета для полигона
-                let intensity = Math.floor((projectedPoints[0].z + projectedPoints[1].z + projectedPoints[2].z) / 3); // Средняя глубина
+                for (let i=0;i<projectedPoints.length-2;i++){
+                    // Рассчитываем интенсивность цвета для полигона
+                    let intensity = Math.floor((projectedPoints[i].z + projectedPoints[i+1].z + projectedPoints[i+2].z) / 3); // Средняя глубина
 
-                // Растеризация треугольных полигонов
-                rasterizeTriangle(projectedPoints[0], projectedPoints[1], projectedPoints[2], intensity);
+                    // Растеризация треугольных полигонов
+                    rasterizeTriangle(projectedPoints[i], projectedPoints[i+1], projectedPoints[i+2], intensity);
 
-                // Проверяем z-буфер для каждой точки внутри полигона
-                for (let y = Math.max(Math.floor(projectedPoints[0].y), 0); y <= Math.min(Math.floor(projectedPoints[2].y), height - 1); y++) {
-                    for (let x = Math.max(Math.floor(projectedPoints[0].x), 0); x <= Math.min(Math.floor(projectedPoints[2].x), width - 1); x++) {
-                        if (projectedPoints[0].z < zbuffer[y * width + x]) {
-                            zbuffer[y * width + x] = projectedPoints[0].z;
-                            ctx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
-                            ctx.fillRect(x, y, 1, 1);
+                    // Проверяем z-буфер для каждой точки внутри полигона
+                    for (let y = Math.max(Math.floor(projectedPoints[i].y), 0); y <= Math.min(Math.floor(projectedPoints[i+2].y), height - 1); y++) {
+                        for (let x = Math.max(Math.floor(projectedPoints[i].x), 0); x <= Math.min(Math.floor(projectedPoints[i+2].x), width - 1); x++) {
+                            if (projectedPoints[i].z < zbuffer[y * width + x]) {
+                                zbuffer[y * width + x] = projectedPoints[i].z;
+                                intensity = Math.floor((projectedPoints[i].z + projectedPoints[i + 1].z + projectedPoints[i + 2].z) / 3); // Средняя глубина
+                                ctx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
+                                ctx.fillRect(x, y, 1, 1);
+                            }
                         }
                     }
                 }
