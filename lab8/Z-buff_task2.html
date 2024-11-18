@@ -97,7 +97,7 @@
                 <option value="Z-buf">Z-buffer</option>
             </select></label>
     </div>
-    
+
     <script>
         class Point {
             constructor(x, y, z) {
@@ -394,7 +394,7 @@
             });
         }
 
-        
+
 
         function loadOBJFile(file) {
             const reader = new FileReader();
@@ -433,39 +433,137 @@
             reader.readAsText(file);
         }
 
+    // Функция для вычисления нормали к плоскости многоугольника
+        function calculateNormal(polygon) {
+            // Выбираем любые три точки для расчета нормали
+            var p0 = polygon.points[0];
+            var p1 = polygon.points[1];
+            var p2 = polygon.points[2];
+
+            // Векторы между точками
+            var v1 = { x: p1.x - p0.x, y: p1.y - p0.y, z: p1.z - p0.z };
+            var v2 = { x: p2.x - p0.x, y: p2.y - p0.y, z: p2.z - p0.z };
+
+            // Нормаль через векторное произведение
+            var normal = {
+                x: v1.y * v2.z - v1.z * v2.y,
+                y: v1.z * v2.x - v1.x * v2.z,
+                z: v1.x * v2.y - v1.y * v2.x
+            };
+
+            return normal;
+        }
+
+        // Функция для проверки видимости многоугольника (Back-face culling)
+        function isVisible(polygon, cameraPosition) {
+            var normal = calculateNormal(polygon);
+
+            // Найдем точку внутри полигона (например, первую)
+            var pointInPolygon = polygon.points[0];
+
+            // Проверим знак скалярного произведения вектора от камеры до точки и нормали
+            var vectorToPoint = {
+                x: pointInPolygon.x - cameraPosition.x,
+                y: pointInPolygon.y - cameraPosition.y,
+                z: pointInPolygon.z - cameraPosition.z
+            };
+
+            var dotProduct = (normal.x * vectorToPoint.x + normal.y * vectorToPoint.y + normal.z * vectorToPoint.z)/Math.sqrt(vectorToPoint.x**2+vectorToPoint.y**2+vectorToPoint.z**2)/Math.sqrt(normal.x**2+normal.y**2+normal.z**2);
+
+            // Если результат отрицательный, то многоугольник виден
+            return dotProduct >= 0;
+        }
+
+        // Функция для сортировки полигонов по глубине (по средней z-координате)
+        function sortPolygonsByDepth(polygons, cameraPosition) {
+            polygons.sort(function (a, b) {
+                var aCenterZ = getAverageZ(a, cameraPosition);
+                var bCenterZ = getAverageZ(b, cameraPosition);
+
+                return bCenterZ - aCenterZ;
+            });
+        }
+
+        // Функция для нахождения средней глубины полигона
+        function getAverageZ(polygon, cameraPosition) {
+            var sumZ = 0;
+
+            for (var i = 0; i < polygon.points.length; i++) {
+                sumZ += polygon.points[i].z;
+            }
+
+            return sumZ / polygon.points.length;
+        }
+
+        // Основная функция для удаления невидимых граней
+        function removeHiddenFaces(polyhedron, cameraPosition) {
+            var visiblePolygons = [];
+
+            for (var i = 0; i < polyhedron.polygons.length; i++) {
+                var polygon = polyhedron.polygons[i];
+
+                if (isVisible(polygon, cameraPosition)) {
+                    visiblePolygons.push(polygon);
+                }
+            }
+
+            // Сортируем полигоны по глубине
+            sortPolygonsByDepth(visiblePolygons, cameraPosition);
+
+            return visiblePolygons;
+        }
+
+            // Функция для сортировки полигонов по глубине (по средней z-координате)
+            function sortPolygonsByDepth(polygons, cameraPosition) {
+                polygons.sort(function (a, b) {
+                    var aCenterZ = getAverageZ(a, cameraPosition);
+                    var bCenterZ = getAverageZ(b, cameraPosition);
+
+                    return bCenterZ - aCenterZ;
+                });
+            }
         function renderModel() {
             const width = canvas.width;
             const height = canvas.height;
-            let zbuffer=createZBuffer();
+            let zbuffer = createZBuffer();
+            let stable;
+            let worker=[];
+            let projectedPoints = [];
+            for (let polygon of polyhedron.polygons) {
+                if (polygon.points==3){
+                    projectedPoints = [];
+
+                    // Преобразовываем каждую вершину полигона в экранные координаты
+                    for (let point of polygon.points) {
+                        projectedPoints.push(projectPoint(point));
+                    }
+                    worker.push(new Polygon(projectedPoints));
+                }
+                else{
+                    stable = projectPoint(polygon.points[0]);
+                    for (let i = 1; i < polygon.points.length - 1; i++){
+                        projectedPoints = [];
+                        projectedPoints.push(stable);
+                        projectedPoints.push(projectPoint(polygon.points[i]));
+                        projectedPoints.push(projectPoint(polygon.points[i+1]));
+                        worker.push(new Polygon(projectedPoints));
+                    }
+                }
+            }
+            let poly=new Polyhedron(worker);
             // Очистка буферов
             clearFrameBuffer();
-            zbuffer.fill(Number.MAX_SAFE_INTEGER);
-
+            let cameraPosition= { x: 100, y: 100, z: 100 };
+            let visiblePolygons=removeHiddenFaces(poly, cameraPosition)
+            zbuffer.fill(getAverageZ(visiblePolygons[0], cameraPosition));
+            let startDep= -getAverageZ(visiblePolygons[visiblePolygons.length - 1]);
+            let dep=(getAverageZ(visiblePolygons[0])+startDep)/200;
             // Проход по всем полигонам модели
-            for (let polygon of polyhedron.polygons) {
-                let projectedPoints = [];
-				
-                // Преобразовываем каждую вершину полигона в экранные координаты
-                for (let point of polygon.points) {
-                    projectedPoints.push(projectPoint(point));
-                }
-                for (let i=0;i<projectedPoints.length-2;i++){
-                    // Рассчитываем интенсивность цвета для полигона
-                    let intensity = [Math.floor(projectedPoints[i].z),Math.floor(projectedPoints[i+1].z),Math.floor(projectedPoints[i+2].z)]; // Средняя глубина
+            for (let polygon of visiblePolygons) {
+                let intensity = [Math.floor((polygon.points[0].z +startDep)/dep), Math.floor((polygon.points[1].z + startDep) / dep), Math.floor((polygon.points[2].z + startDep) / dep)]; // Средняя глубина
 
-                    // Растеризация треугольных полигонов
-                    rasterizeTriangle(projectedPoints[i], projectedPoints[i+1], projectedPoints[i+2], intensity);
-
-                    // Проверяем z-буфер для каждой точки внутри полигона
-                    for (let y = Math.max(Math.floor(projectedPoints[i].y), 0); y <= Math.min(Math.floor(projectedPoints[i+2].y), height - 1); y++) {
-                        for (let x = Math.max(Math.floor(projectedPoints[i].x), 0); x <= Math.min(Math.floor(projectedPoints[i+2].x), width - 1); x++) {
-                            if (projectedPoints[i].z < zbuffer[y * width + x]) {
-                                zbuffer[y * width + x] = projectedPoints[i].z;
-                            }
-                        }
-                    }
-					max=-100, min=Number.MAX_SAFE_INTEGER;
-                }
+                // Растеризация треугольных полигонов
+                rasterizeTriangle(polygon.points[0], polygon.points[1], polygon.points[2], intensity);
             }
         }
 
@@ -487,8 +585,8 @@
         function projectPoint(point) {
             let currx, curry;
             if (projection === 'perspective') {
-                currx = point.x / (1 - point.z / 200) + canvas.width / 2;
-                curry = point.y / (1 - point.z / 200) + canvas.height / 2;
+                currx = point.x / (1 - point.z / 100) + canvas.width / 2;
+                curry = point.y / (1 - point.z / 100) + canvas.height / 2;
             } else if (projection === 'axonometric') {
                 currx = (point.x - point.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
                 curry = (point.x + point.y) * Math.sin(Math.PI / 4) - point.z + canvas.height / 2;
@@ -497,185 +595,185 @@
                 x: currx, y: curry, z: point.z
             };
         }
-		
 
-function up() {
-    // ctx.beginPath();
-    // ctx.moveTo(x1,y1);
-    var lx, lr, lg, lb, rx, rr, rg, rb, r, g, b;
-    y = y1;
 
-    while (y <= y2) {
-        y += 1;
-        //две нижние точки на одной высоте
-        if (y2 === y3) {
-            lx = x1 + (y - y1) / (y2 - y1) * (x2 - x1);
-            lr = r1 + (y - y1) / (y2 - y1) * (r2 - r1);
-            lg = g1 + (y - y1) / (y2 - y1) * (g2 - g1);
-            lb = b1 + (y - y1) / (y2 - y1) * (b2 - b1);
+        function up() {
+            // ctx.beginPath();
+            // ctx.moveTo(x1,y1);
+            var lx, lr, lg, lb, rx, rr, rg, rb, r, g, b;
+            y = y1;
 
-            rx = x1 + (y - y1) / (y3 - y1) * (x3 - x1);
-            rr = r1 + (y - y1) / (y3 - y1) * (r3 - r1);
-            rg = g1 + (y - y1) / (y3 - y1) * (g3 - g1);
-            rb = b1 + (y - y1) / (y3 - y1) * (b3 - b1);
+            while (y <= y2) {
+                y += 1;
+                //две нижние точки на одной высоте
+                if (y2 === y3) {
+                    lx = x1 + (y - y1) / (y2 - y1) * (x2 - x1);
+                    lr = r1 + (y - y1) / (y2 - y1) * (r2 - r1);
+                    lg = g1 + (y - y1) / (y2 - y1) * (g2 - g1);
+                    lb = b1 + (y - y1) / (y2 - y1) * (b2 - b1);
 
-        } else {
-            //средняя по высоте точка точка правее самой нижней
+                    rx = x1 + (y - y1) / (y3 - y1) * (x3 - x1);
+                    rr = r1 + (y - y1) / (y3 - y1) * (r3 - r1);
+                    rg = g1 + (y - y1) / (y3 - y1) * (g3 - g1);
+                    rb = b1 + (y - y1) / (y3 - y1) * (b3 - b1);
 
-            rx = x1 + (y - y1) / (y2 - y1) * (x2 - x1);
-            rr = r1 + (y - y1) / (y2 - y1) * (r2 - r1);
-            rg = g1 + (y - y1) / (y2 - y1) * (g2 - g1);
-            rb = b1 + (y - y1) / (y2 - y1) * (b2 - b1);
+                } else {
+                    //средняя по высоте точка точка правее самой нижней
 
-            lx = x1 + (y - y1) / (y2 - y1) * (mid   - x1);
-            lr = r1 + (y - y1) / (y2 - y1) * (mid_r - r1);
-            lg = g1 + (y - y1) / (y2 - y1) * (mid_g - g1);
-            lb = b1 + (y - y1) / (y2 - y1) * (mid_b - b1);
+                    rx = x1 + (y - y1) / (y2 - y1) * (x2 - x1);
+                    rr = r1 + (y - y1) / (y2 - y1) * (r2 - r1);
+                    rg = g1 + (y - y1) / (y2 - y1) * (g2 - g1);
+                    rb = b1 + (y - y1) / (y2 - y1) * (b2 - b1);
 
-            //средняя точка левее самой нижней
-            if (x3 > x2) {
-                [lx, rx] = [rx, lx];
-                [lr, rr] = [rr, lr];
-                [lg, rg] = [rg, lg];
-                [lb, rb] = [rb, lb];
+                    lx = x1 + (y - y1) / (y2 - y1) * (mid - x1);
+                    lr = r1 + (y - y1) / (y2 - y1) * (mid_r - r1);
+                    lg = g1 + (y - y1) / (y2 - y1) * (mid_g - g1);
+                    lb = b1 + (y - y1) / (y2 - y1) * (mid_b - b1);
+
+                    //средняя точка левее самой нижней
+                    if (x3 > x2) {
+                        [lx, rx] = [rx, lx];
+                        [lr, rr] = [rr, lr];
+                        [lg, rg] = [rg, lg];
+                        [lb, rb] = [rb, lb];
+                    }
+                }
+                // ctx.beginPath();
+                // ctx.moveTo(lx, y);
+                if (lx > rx) {
+                    [lx, rx] = [rx, lx];
+                    [lr, rr] = [rr, lr];
+                    [lg, rg] = [rg, lg];
+                    [lb, rb] = [rb, lb];
+                }
+                for (i = lx; i <= rx; i += 0.1) {
+                    r = lr + (i - lx) / (rx - lx) * (rr - lr);
+                    g = lg + (i - lx) / (rx - lx) * (rg - lg);
+                    b = lb + (i - lx) / (rx - lx) * (rb - lb);
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(i, y, 1, 1);
+                }
+                // ctx.stroke();
             }
         }
-        // ctx.beginPath();
-        // ctx.moveTo(lx, y);
-        if (lx > rx) {
-            [lx, rx] = [rx, lx];
-            [lr, rr] = [rr, lr];
-            [lg, rg] = [rg, lg];
-            [lb, rb] = [rb, lb];
-        }
-        for (i = lx; i <= rx; i += 0.1) {
-            r = lr + (i - lx) / (rx - lx) * (rr - lr);
-            g = lg + (i - lx) / (rx - lx) * (rg - lg);
-            b = lb + (i - lx) / (rx - lx) * (rb - lb);
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(i, y, 1, 1);
-        }
-        // ctx.stroke();
-    }
-}
 
 
-function low() {
+        function low() {
 
-    var lx, lr, lg, lb, rx, rr, rg, rb, r, g, b;
-    y = y2;
+            var lx, lr, lg, lb, rx, rr, rg, rb, r, g, b;
+            y = y2;
 
-    while (y <= y3) {
+            while (y <= y3) {
 
-        y += 1;
-        //средняя точка по высоте правее чем нижняя
-        if (x2 > x3) {
-            lx = mid + (y - y2) / (y3 - y2) * (x3 - mid);
-            lr = mid_r + (y - y2) / (y3 - y2) * (r3 - mid_r);
-            lg = mid_g + (y - y2) / (y3 - y2) * (g3 - mid_g);
-            lb = mid_b + (y - y2) / (y3 - y2) * (b3 - mid_b);
+                y += 1;
+                //средняя точка по высоте правее чем нижняя
+                if (x2 > x3) {
+                    lx = mid + (y - y2) / (y3 - y2) * (x3 - mid);
+                    lr = mid_r + (y - y2) / (y3 - y2) * (r3 - mid_r);
+                    lg = mid_g + (y - y2) / (y3 - y2) * (g3 - mid_g);
+                    lb = mid_b + (y - y2) / (y3 - y2) * (b3 - mid_b);
 
-            rx = x2 + (y - y2) / (y3 - y2) * (x3 - x2);
-            rr = r2 + (y - y2) / (y3 - y2) * (r3 - r2);
-            rg = g2 + (y - y2) / (y3 - y2) * (g3 - g2);
-            rb = b2 + (y - y2) / (y3 - y2) * (b3 - b2);
-        } else {
-            //средняя точка левее чем
-            lx = x2 + (y - y2) / (y3 - y2) * (x3 - x2);
-            lr = r2 + (y - y2) / (y3 - y2) * (r3 - r2);
-            lg = g2 + (y - y2) / (y3 - y2) * (g3 - g2);
-            lb = b2 + (y - y2) / (y3 - y2) * (b3 - b2);
+                    rx = x2 + (y - y2) / (y3 - y2) * (x3 - x2);
+                    rr = r2 + (y - y2) / (y3 - y2) * (r3 - r2);
+                    rg = g2 + (y - y2) / (y3 - y2) * (g3 - g2);
+                    rb = b2 + (y - y2) / (y3 - y2) * (b3 - b2);
+                } else {
+                    //средняя точка левее чем
+                    lx = x2 + (y - y2) / (y3 - y2) * (x3 - x2);
+                    lr = r2 + (y - y2) / (y3 - y2) * (r3 - r2);
+                    lg = g2 + (y - y2) / (y3 - y2) * (g3 - g2);
+                    lb = b2 + (y - y2) / (y3 - y2) * (b3 - b2);
 
-            rx = mid + (y - y2) / (y3 - y2) * (x3 - mid);
-            rr = mid_r + (y - y2) / (y3 - y2) * (r3 - mid_r);
-            rg = mid_g + (y - y2) / (y3 - y2) * (g3 - mid_g);
-            rb = mid_b + (y - y2) / (y3 - y2) * (b3 - mid_b);
-        }
+                    rx = mid + (y - y2) / (y3 - y2) * (x3 - mid);
+                    rr = mid_r + (y - y2) / (y3 - y2) * (r3 - mid_r);
+                    rg = mid_g + (y - y2) / (y3 - y2) * (g3 - mid_g);
+                    rb = mid_b + (y - y2) / (y3 - y2) * (b3 - mid_b);
+                }
 
-        if (lx>rx) {
-            [lx, rx] = [rx, lx];
-            [lr, rr] = [rr, lr];
-            [lg, rg] = [rg, lg];
-            [lb, rb] = [rb, lb];
-        }
-        for (i = lx; i <= rx; i += 0.1) {
-            r = lr + (i - lx) / (rx - lx) * (rr - lr);
-            g = lg + (i - lx) / (rx - lx) * (rg - lg);
-            b = lb + (i - lx) / (rx - lx) * (rb - lb);
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(i, y, 1, 1);
+                if (lx > rx) {
+                    [lx, rx] = [rx, lx];
+                    [lr, rr] = [rr, lr];
+                    [lg, rg] = [rg, lg];
+                    [lb, rb] = [rb, lb];
+                }
+                for (i = lx; i <= rx; i += 0.1) {
+                    r = lr + (i - lx) / (rx - lx) * (rr - lr);
+                    g = lg + (i - lx) / (rx - lx) * (rg - lg);
+                    b = lb + (i - lx) / (rx - lx) * (rb - lb);
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(i, y, 1, 1);
+                }
+
+            }
         }
 
-    }
-}
-
-// ctx.fillStyle = "black";
-// ctx.fillRect(0, 0, triangle.width, triangle.height);
-var r1, g1, b1, r2, g2, b2, r3, g3, b3;
-var mid, mid_r, mid_g, mid_b;
-var x1, x2, x3, y1, y2, y3;
+        // ctx.fillStyle = "black";
+        // ctx.fillRect(0, 0, triangle.width, triangle.height);
+        var r1, g1, b1, r2, g2, b2, r3, g3, b3;
+        var mid, mid_r, mid_g, mid_b;
+        var x1, x2, x3, y1, y2, y3;
         // Функция для растеризации треугольного полигона
         function rasterizeTriangle(p1, p2, p3, intensity) {
-           r1 = intensity[0];
-			g1 = intensity[0];
-			b1 = intensity[0];
+            r1 = intensity[0];
+            g1 = intensity[0];
+            b1 = intensity[0];
 
-			r2 = intensity[1];
-			g2 = intensity[1];
-			b2 = intensity[1];
+            r2 = intensity[1];
+            g2 = intensity[1];
+            b2 = intensity[1];
 
-			r3 = intensity[2];
-			g3 = intensity[2];
-			b3 = intensity[2];
+            r3 = intensity[2];
+            g3 = intensity[2];
+            b3 = intensity[2];
 
-			x1 = p1.x;
-			y1 = p1.y;
-			x2 = p2.x;
-			y2 = p2.y;
-			x3 = p3.x;
-			y3 = p3.y;
+            x1 = p1.x;
+            y1 = p1.y;
+            x2 = p2.x;
+            y2 = p2.y;
+            x3 = p3.x;
+            y3 = p3.y;
 
 
-			if (y1 > y2) {
-				[x1, x2] = [x2, x1];
-				[y1, y2] = [y2, y1];
-				[r1, r2] = [r2, r1];
-				[g1, g2] = [g2, g1];
-				[b1, b2] = [b2, b1];
-			}
-			if (y1 > y3) {
-				[x1, x3] = [x3, x1];
-				[y1, y3] = [y3, y1];
-				[r1, r3] = [r3, r1];
-				[g1, g3] = [g3, g1];
-				[b1, b3] = [b3, b1];
-			}
-			if (y2 > y3) {
-				[x3, x2] = [x2, x3];
-				[y3, y2] = [y2, y3];
-				[r2, r3] = [r3, r2];
-				[g2, g3] = [g3, g2];
-				[b2, b3] = [b3, b2];
-			}
+            if (y1 > y2) {
+                [x1, x2] = [x2, x1];
+                [y1, y2] = [y2, y1];
+                [r1, r2] = [r2, r1];
+                [g1, g2] = [g2, g1];
+                [b1, b2] = [b2, b1];
+            }
+            if (y1 > y3) {
+                [x1, x3] = [x3, x1];
+                [y1, y3] = [y3, y1];
+                [r1, r3] = [r3, r1];
+                [g1, g3] = [g3, g1];
+                [b1, b3] = [b3, b1];
+            }
+            if (y2 > y3) {
+                [x3, x2] = [x2, x3];
+                [y3, y2] = [y2, y3];
+                [r2, r3] = [r3, r2];
+                [g2, g3] = [g3, g2];
+                [b2, b3] = [b3, b2];
+            }
 
-			mid = x1 + (y2 - y1) / (y3 - y1) * (x3 - x1);
-			mid_r = r1 + (y2 - y1) / (y3 - y1) * (r3 - r1);
-			mid_g = g1 + (y2 - y1) / (y3 - y1) * (g3 - g1);
-			mid_b = b1 + (y2 - y1) / (y3 - y1) * (b3 - b1);
+            mid = x1 + (y2 - y1) / (y3 - y1) * (x3 - x1);
+            mid_r = r1 + (y2 - y1) / (y3 - y1) * (r3 - r1);
+            mid_g = g1 + (y2 - y1) / (y3 - y1) * (g3 - g1);
+            mid_b = b1 + (y2 - y1) / (y3 - y1) * (b3 - b1);
 
-			// ctx.fillStyle = "green";
-			// ctx.fillRect(x1, y1, 5, 5);
-			// ctx.fillRect(x2, y2, 5, 5);
-			// ctx.fillRect(x3, y3, 5, 5);
-			// ctx.fillStyle = "red";
-			// ctx.fillRect(mid, y2, 5, 5);
-			// ctx.fillStyle = "black";
-			// ctx.fillRect(0, 0, triangle.width, triangle.height);
-			up();
-			low();
+            // ctx.fillStyle = "green";
+            // ctx.fillRect(x1, y1, 5, 5);
+            // ctx.fillRect(x2, y2, 5, 5);
+            // ctx.fillRect(x3, y3, 5, 5);
+            // ctx.fillStyle = "red";
+            // ctx.fillRect(mid, y2, 5, 5);
+            // ctx.fillStyle = "black";
+            // ctx.fillRect(0, 0, triangle.width, triangle.height);
+            up();
+            low();
 
         }
-        
+
 
         function rotateAroundAxis() {
             const axis = document.getElementById('axis').value;
@@ -754,16 +852,16 @@ var x1, x2, x3, y1, y2, y3;
 
         document.getElementById('projection').addEventListener('change', function () {
             projection = this.value;
-            if (document.getElementById("view").value=='usual')
+            if (document.getElementById("view").value == 'usual')
                 drawPolyhedron()
             else renderModel();
         });
 
         document.getElementById('view').addEventListener('change', function () {
-                let view = this.value;
-                if (view == 'usual')
-                    drawPolyhedron()
-                else renderModel();
+            let view = this.value;
+            if (view == 'usual')
+                drawPolyhedron()
+            else renderModel();
         });
 
         document.getElementById('polyhedron').addEventListener('change', function () {
