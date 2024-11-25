@@ -55,6 +55,7 @@
         <button onclick="rotateAroundLine()">Rotate Around Line</button>
         <br>
         <label>Projection: <select id="projection">
+                <option value="parallel">Parallel</option>
                 <option value="axonometric">Axonometric</option>
                 <option value="perspective">Perspective</option>
             </select>
@@ -366,14 +367,16 @@
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        let projection = 'axonometric';
+        let projection = 'parallel';
         const fileInput = document.getElementById('file-input');
         var obj_file_vertices = [];
         var obj_file_faces = [];
         let objPolyhedron = null;
         let polyhedron = tetrahedron;
+        let cameraPosition = { x: canvas.width / 2, y: canvas.height / 2, z: 100 };
 
         function drawPolyhedron() {
+            let a, b, c, ab, bc, normal, skalar;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             polyhedron.polygons.forEach(polygon => {
                 ctx.beginPath();
@@ -385,16 +388,37 @@
                     } else if (projection === 'axonometric') {
                         x = (point.x - point.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
                         y = (point.x + point.y) * Math.sin(Math.PI / 4) - point.z + canvas.height / 2;
+                    } else if (projection === 'parallel') {
+                        x = point.x + canvas.width / 2;
+                        y = point.y + canvas.height / 2;
                     }
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                        a = [point.x, point.y, point.z];
+                    } else if (index === 1) {
+                        b = [point.x, point.y, point.z];
+                    } else if (index === 2) {
+                        c = [point.x, point.y, point.z];
+                        ab = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+                        bc = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+                        normal = [ab[1] * bc[2] - ab[2] * bc[1], ab[2] * bc[0] - ab[0] * bc[2], ab[0] * bc[1] - ab[1] * bc[0]];
+
+                        skalar = normal[2];
+                    }
+
+                    if (index > 0) ctx.lineTo(x, y);
                     if (index === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 });
+                if (skalar < 0) {
+                    ctx.fillStyle = 'gray';
+                    ctx.fill();
+                    ctx.stroke();
+                }
                 ctx.closePath();
                 ctx.stroke();
             });
         }
-
-
 
         function loadOBJFile(file) {
             const reader = new FileReader();
@@ -421,6 +445,32 @@
                         faces.push(face);
                     }
                 });
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const minX = Math.min(...vertices.map(v => v.x));
+                const maxX = Math.max(...vertices.map(v => v.x));
+                const minY = Math.min(...vertices.map(v => v.y));
+                const maxY = Math.max(...vertices.map(v => v.y));
+
+                const scaleX = canvas.width / (maxX - minX);
+                const scaleY = canvas.height / (maxY - minY);
+                const scale = Math.min(scaleX, scaleY) * 0.8;
+
+                const offsetX = (canvas.width - (maxX - minX) * scale) / 2;
+                const offsetY = (canvas.height - (maxY - minY) * scale) / 2;
+
+                faces.forEach(face => {
+                    face.forEach((vertexIndex, i) => {
+                        const vertex = vertices[vertexIndex];
+                        const x = (vertex.x - minX) * scale + offsetX;
+                        const y = (maxY - vertex.y) * scale + offsetY;
+                    });
+                });
+
+                vertices.forEach(vertex => {
+                    const x = (vertex.x - minX) * scale + offsetX;
+                    const y = (maxY - vertex.y) * scale + offsetY;
+                });
                 obj_file_vertices = vertices;
                 obj_file_faces = faces;
                 const polygons = faces.map(face => new Polygon(face.map(index => new Point(vertices[index].x, vertices[index].y, vertices[index].z))));
@@ -433,55 +483,42 @@
             reader.readAsText(file);
         }
 
-    // Функция для вычисления нормали к плоскости многоугольника
-        function calculateNormal(polygon) {
-            // Выбираем любые три точки для расчета нормали
-            var p0 = polygon.points[0];
-            var p1 = polygon.points[1];
-            var p2 = polygon.points[2];
+        function findPolygonCenter(polygon) {
+                let [x, y, z] = [0, 0, 0];
+                count = 0;
+                polygon.points.forEach(vertex => {
+                    x += vertex.x;
+                    y += vertex.y;
+                    z += vertex.z;
+                    count++;
+                });
+                x /= count;
+                y /= count;
+                z /= count;
+                return [x, y, z];
 
-            // Векторы между точками
-            var v1 = { x: p1.x - p0.x, y: p1.y - p0.y, z: p1.z - p0.z };
-            var v2 = { x: p2.x - p0.x, y: p2.y - p0.y, z: p2.z - p0.z };
-
-            // Нормаль через векторное произведение
-            var normal = {
-                x: v1.y * v2.z - v1.z * v2.y,
-                y: v1.z * v2.x - v1.x * v2.z,
-                z: v1.x * v2.y - v1.y * v2.x
-            };
-
-            return normal;
         }
-
-        // Функция для проверки видимости многоугольника (Back-face culling)
-        function isVisible(polygon, cameraPosition) {
-            var normal = calculateNormal(polygon);
-
-            // Найдем точку внутри полигона (например, первую)
-            var pointInPolygon = polygon.points[0];
-
-            // Проверим знак скалярного произведения вектора от камеры до точки и нормали
-            var vectorToPoint = {
-                x: pointInPolygon.x - cameraPosition.x,
-                y: pointInPolygon.y - cameraPosition.y,
-                z: pointInPolygon.z - cameraPosition.z
-            };
-
-            var dotProduct = (normal.x * vectorToPoint.x + normal.y * vectorToPoint.y + normal.z * vectorToPoint.z)/Math.sqrt(vectorToPoint.x**2+vectorToPoint.y**2+vectorToPoint.z**2)/Math.sqrt(normal.x**2+normal.y**2+normal.z**2);
-
-            // Если результат отрицательный, то многоугольник виден
-            return dotProduct >= 0;
+        function getCentroids(polyhedron) {
+                points = [];
+                polyhedron.polygons.forEach(polygon => {
+                    points.push(findPolygonCenter(polygon));
+                })
+                return points;
         }
+        function getPolyhedronCenter(centroids) {
+                [x, y, z] = [0, 0, 0];
+                count = 0;
+                centroids.forEach(point => {
+                    x += point[0];
+                    y += point[1];
+                    z += point[2];
 
-        // Функция для сортировки полигонов по глубине (по средней z-координате)
-        function sortPolygonsByDepth(polygons, cameraPosition) {
-            polygons.sort(function (a, b) {
-                var aCenterZ = getAverageZ(a, cameraPosition);
-                var bCenterZ = getAverageZ(b, cameraPosition);
+                });
+                x /= centroids.length;
+                y /= centroids.length;
+                z /= centroids.length;
+                return [x, y, z];
 
-                return bCenterZ - aCenterZ;
-            });
         }
 
         // Функция для нахождения средней глубины полигона
@@ -495,33 +532,35 @@
             return sumZ / polygon.points.length;
         }
 
-        // Основная функция для удаления невидимых граней
-        function removeHiddenFaces(polyhedron, cameraPosition) {
-            var visiblePolygons = [];
-
-            for (var i = 0; i < polyhedron.polygons.length; i++) {
-                var polygon = polyhedron.polygons[i];
-
-                if (isVisible(polygon, cameraPosition)) {
-                    visiblePolygons.push(polygon);
-                }
-            }
-
-            // Сортируем полигоны по глубине
-            sortPolygonsByDepth(visiblePolygons, cameraPosition);
-
-            return visiblePolygons;
-        }
-
-            // Функция для сортировки полигонов по глубине (по средней z-координате)
-            function sortPolygonsByDepth(polygons, cameraPosition) {
+            
+        function sortPolygonsByDepth(polygons, cameraPosition) {
                 polygons.sort(function (a, b) {
                     var aCenterZ = getAverageZ(a, cameraPosition);
                     var bCenterZ = getAverageZ(b, cameraPosition);
-
                     return bCenterZ - aCenterZ;
                 });
             }
+
+        function removeHiddenFaces(poly, cameraPosition){
+            let visiblePolygons=[];
+            let a,b,c,ab,bc,normal, skalar;
+            for (let polygon of poly.polygons){
+                a = polygon.points[0];
+                b = polygon.points[1];
+                c = polygon.points[2];
+                ab = [a.x - b.x, a.y - b.y, a.z - b.z];
+                bc = [c.x - b.x, c.y - b.y, c.z - b.z];
+                normal = [ab[1] * bc[2] - ab[2] * bc[1], ab[2] * bc[0] - ab[0] * bc[2], ab[0] * bc[1] - ab[1] * bc[0]];
+
+                skalar = normal[2];
+                if (skalar<0)
+                    visiblePolygons.push(polygon);
+            }
+            sortPolygonsByDepth(visiblePolygons, cameraPosition);
+            return visiblePolygons;
+        }
+
+
         function renderModel() {
             const width = canvas.width;
             const height = canvas.height;
@@ -553,20 +592,19 @@
             let poly=new Polyhedron(worker);
             // Очистка буферов
             clearFrameBuffer();
-            let cameraPosition= { x: 100, y: 100, z: 100 };
+            
             let visiblePolygons=removeHiddenFaces(poly, cameraPosition)
             zbuffer.fill(getAverageZ(visiblePolygons[0], cameraPosition));
             let startDep= -getAverageZ(visiblePolygons[visiblePolygons.length - 1]);
             let dep=(getAverageZ(visiblePolygons[0])+startDep)/200;
             // Проход по всем полигонам модели
             for (let polygon of visiblePolygons) {
-                let intensity = [Math.floor((polygon.points[0].z +startDep)/dep), Math.floor((polygon.points[1].z + startDep) / dep), Math.floor((polygon.points[2].z + startDep) / dep)]; // Средняя глубина
+                let intensity = [Math.floor((polygon.points[0].z +startDep)*dep), Math.floor((polygon.points[1].z + startDep) * dep), Math.floor((polygon.points[2].z + startDep) * dep)]; // Средняя глубина
 
                 // Растеризация треугольных полигонов
                 rasterizeTriangle(polygon.points[0], polygon.points[1], polygon.points[2], intensity);
             }
         }
-
 
         // Функция для заполнения буфера кадра фоновым цветом
         function clearFrameBuffer(color = 'black') {
@@ -590,6 +628,9 @@
             } else if (projection === 'axonometric') {
                 currx = (point.x - point.y) * Math.cos(Math.PI / 4) + canvas.width / 2;
                 curry = (point.x + point.y) * Math.sin(Math.PI / 4) - point.z + canvas.height / 2;
+            } else if (projection === 'parallel') {
+                currx = point.x + canvas.width / 2;
+                curry = point.y + canvas.height / 2;
             }
             return {
                 x: currx, y: curry, z: point.z
@@ -852,6 +893,9 @@
 
         document.getElementById('projection').addEventListener('change', function () {
             projection = this.value;
+            if (this.value=='perspective')
+                cameraPosition = { x: 0, y: 0, z: 100 };
+            else cameraPosition = {x: canvas.width / 2, y: canvas.height / 2, z: 100  };
             if (document.getElementById("view").value == 'usual')
                 drawPolyhedron()
             else renderModel();
