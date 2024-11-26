@@ -537,7 +537,7 @@
                 polygons.sort(function (a, b) {
                     var aCenterZ = getAverageZ(a, cameraPosition);
                     var bCenterZ = getAverageZ(b, cameraPosition);
-                    return bCenterZ - aCenterZ;
+                    return -(bCenterZ - aCenterZ);
                 });
             }
 
