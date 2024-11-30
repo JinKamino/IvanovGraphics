@@ -444,6 +444,40 @@
                     // Рисуем многоугольник
                     drawPolygon(polygon, color);
                 }
+                else{
+                    let worker = [];
+                    if (polygon.points.length>3){
+                        stable = polygon.points[0];
+                        for (let i = 1; i < polygon.points.length - 1; i++) {
+                            worker.push(new Polygon([stable, polygon.points[i], polygon.points[i+1]]));
+                        }
+                    }
+                    worker.forEach(poly=>{
+                        // Рассчитываем нормаль к текущему многоугольнику
+                        const normal = calculateNormal(poly);
+
+                        // Проверяем, является ли грань лицевой
+                        if (isFrontFace(normal, viewDirection)) {
+                            // Освещение: нормализуем нормаль и вектор света
+                            const normalizedNormal = normalizeVector(normal);
+                            const lightVector = {
+                                x: viewDirection.x - poly.points[0].x,
+                                y: viewDirection.y - poly.points[0].y,
+                                z: viewDirection.z - poly.points[0].z
+                            };
+                            const normalizedLight = normalizeVector(lightVector);
+
+                            // Вычисляем интенсивность света
+                            const lightIntensity = Math.max(0, dotProduct(normalizedNormal, normalizedLight));
+
+                            // Задаем цвет с учетом интенсивности
+                            const color = applyShading(objectColor, lightIntensity);
+
+                            // Рисуем многоугольник
+                            drawPolygon(poly, color);
+                        }
+                    })
+                }
             });
         }
 
