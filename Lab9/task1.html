@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polyhedron Rotation and Projection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+
+        canvas {
+            border: 1px solid #000;
+            background-color: #fff;
+        }
+
+        .controls {
+            margin-top: 20px;
+        }
+
+        .controls input,
+        .controls select {
+            margin: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas" width="800" height="800"></canvas>
+    <div class="controls">
+        ВНИМАНИЕ! после загрузки фигуры и применения к ней любого афинного преобразования её масштаб уменьшится и надо
+        будет увеличить его (примерно в 200 раз) через apply scale around center
+        <br>
+        <input type="file" id="file-input" accept=".obj">
+        <br>
+        <label>Light direction: <input type="text" id="light" value="0,0,-1"></label>
+        <label>Axis: <select id="axis">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select></label>
+        <label>Angle: <input type="number" id="angle" value="45"></label>
+        <button onclick="rotateAroundAxis()">Rotate Around Axis</button>
+        <br>
+        <label>Point 1 (x, y, z): <input type="text" id="point1" value="1,0,0"></label>
+        <label>Point 2 (x, y, z): <input type="text" id="point2" value="0,1,0"></label>
+        <label>Angle: <input type="number" id="angle2" value="45"></label>
+        <button onclick="rotateAroundLine()">Rotate Around Line</button>
+        <br>
+        <label>Projection: <select id="projection">
+                <option value="parallel">Parallel</option>
+                <option value="perspective">Perspective</option>
+                <option value="axonometric">Axonometric</option>
+            </select></label>
+        <br>
+        <label>Polyhedron: <select id="polyhedron">
+                <option value="tetrahedron">Tetrahedron</option>
+                <option value="hexahedron">Hexahedron</option>
+                <option value="octahedron">Octahedron</option>
+            </select></label>
+        <br>
+        <label>Scale (mx, my, mz): <input type="text" id="scale" value="1,1,1"></label>
+        <button onclick="applyScale()">Apply Scale</button>
+        <br>
+        <label>Scale: <input type="number" id="scale_center" value="1"></label>
+        <button onclick="applyScaleCenter()">Apply Scale Around Center</button>
+        <br>
+        <label>Axis: <select id="axis_reflect">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select></label>
+        <button onclick="reflectAxis()">Reflect Around Axis</button>
+        <br>
+        <label>Translate (dx, dy, dz): <input type="text" id="translation" value="0,0,0"></label>
+        <button onclick="applyTranslate()">Apply Translation</button>
+        <br>
+        <label>Rotate (dx, dy, dz): <input type="text" id="rotation" value="0,0,0"></label>
+        <button onclick="applyRotate()">Apply Rotation</button>
+        <br>
+        <label>Rotate Around Center (axis): <select id="axis_rotate_center">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select></label>
+        <label>Angle: <input type="number" id="angle_rotate_center" value="45"></label>
+        <button onclick="rotateAroundCenter()">Rotate Around Center</button>
+    </div>
+
+    <script>
+        class Point {
+            constructor(x, y, z) {
+                this.x = x;
+                this.y = y;
+                this.z = z;
+            }
+        }
+
+        class Polygon {
+            constructor(points) {
+                this.points = points;
+            }
+        }
+
+        class Polyhedron {
+            constructor(polygons) {
+                this.polygons = polygons;
+            }
+
+            calculateCenter() {
+                let sumX = 0, sumY = 0, sumZ = 0;
+                let count = 0;
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        sumX += point.x;
+                        sumY += point.y;
+                        sumZ += point.z;
+                        count++;
+                    });
+                });
+                return new Point(sumX / count, sumY / count, sumZ / count);
+            }
+
+            multiplyMatrixVector(matrix, vector) {
+                return matrix.map(row =>
+                    row.reduce((sum, value, index) => sum + value * vector[index], 0)
+                );
+            }
+
+            multiplyMatrices(a, b) {
+                const result = [];
+                for (let i = 0; i < a.length; i++) {
+                    result[i] = [];
+                    for (let j = 0; j < b[0].length; j++) {
+                        let sum = 0;
+                        for (let k = 0; k < a[0].length; k++) {
+                            sum += a[i][k] * b[k][j];
+                        }
+                        result[i][j] = sum;
+                    }
+                }
+                return result;
+            }
+
+            createTranslationMatrix(tx, ty, tz) {
+                return [
+                    [1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, 0],
+                    [tx, ty, tz, 1]
+                ];
+            }
+
+            createRotationMatrix(axis, angle) {
+                const rad = angle * (Math.PI / 180);
+                if (axis === 'x') {
+                    return [
+                        [1, 0, 0, 0],
+                        [0, Math.cos(rad), -Math.sin(rad), 0],
+                        [0, Math.sin(rad), Math.cos(rad), 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'y') {
+                    return [
+                        [Math.cos(rad), 0, Math.sin(rad), 0],
+                        [0, 1, 0, 0],
+                        [-Math.sin(rad), 0, Math.cos(rad), 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'z') {
+                    return [
+                        [Math.cos(rad), -Math.sin(rad), 0, 0],
+                        [Math.sin(rad), Math.cos(rad), 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                }
+            }
+
+            rotateAroundAxis(axis, angle) {
+                const center = this.calculateCenter();
+                const T_minus_A = this.createTranslationMatrix(-center.x, -center.y, -center.z);
+                const rotationMatrix = this.createRotationMatrix(axis, angle);
+                const T_A = this.createTranslationMatrix(center.x, center.y, center.z);
+
+                const combinedMatrix = this.multiplyMatrices(this.multiplyMatrices(T_minus_A, rotationMatrix), T_A);
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            rotateAroundLine(p1, p2, angle) {
+                const center = this.calculateCenter();
+                const T_minus_A = this.createTranslationMatrix(-center.x, -center.y, -center.z);
+                const T_A = this.createTranslationMatrix(center.x, center.y, center.z);
+
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const dz = p2.z - p1.z;
+                const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                const u = dx / length;
+                const v = dy / length;
+                const w = dz / length;
+
+                const rad = angle * (Math.PI / 180);
+                const rotationMatrix = [
+                    [u * u + (1 - u * u) * Math.cos(rad), u * v * (1 - Math.cos(rad)) - w * Math.sin(rad), u * w * (1 - Math.cos(rad)) + v * Math.sin(rad), 0],
+                    [u * v * (1 - Math.cos(rad)) + w * Math.sin(rad), v * v + (1 - v * v) * Math.cos(rad), v * w * (1 - Math.cos(rad)) - u * Math.sin(rad), 0],
+                    [u * w * (1 - Math.cos(rad)) - v * Math.sin(rad), v * w * (1 - Math.cos(rad)) + u * Math.sin(rad), w * w + (1 - w * w) * Math.cos(rad), 0],
+                    [0, 0, 0, 1]
+                ];
+
+                const combinedMatrix = this.multiplyMatrices(this.multiplyMatrices(T_minus_A, rotationMatrix), T_A);
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            createScaleMatrix(mx, my, mz) {
+                return [
+                    [mx, 0, 0, 0],
+                    [0, my, 0, 0],
+                    [0, 0, mz, 0],
+                    [0, 0, 0, 1]
+                ];
+            }
+
+            applyScale(mx, my, mz) {
+                const scaleMatrix = this.createScaleMatrix(mx, my, mz);
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(scaleMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            applyTranslation(dx, dy, dz) {
+                const translationMatrix = this.createTranslationMatrix(dx, dy, dz);
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(translationMatrix, [point.x + dx, point.y + dy, point.z + dz, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            applyRotation(dx, dy, dz) {
+                const rotationXMatrix = this.createRotationMatrix('x', dx);
+                const rotationYMatrix = this.createRotationMatrix('y', dy);
+                const rotationZMatrix = this.createRotationMatrix('z', dz);
+
+                const combinedMatrix = this.multiplyMatrices(rotationXMatrix, this.multiplyMatrices(rotationYMatrix, rotationZMatrix));
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(combinedMatrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            reflect(axis) {
+                let matrix;
+                if (axis === 'x') {
+                    matrix = [
+                        [1, 0, 0, 0],
+                        [0, -1, 0, 0],
+                        [0, 0, -1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'y') {
+                    matrix = [
+                        [-1, 0, 0, 0],
+                        [0, 1, 0, 0],
+                        [0, 0, -1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                } else if (axis === 'z') {
+                    matrix = [
+                        [-1, 0, 0, 0],
+                        [0, -1, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]
+                    ];
+                }
+
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        const [x, y, z, w] = this.multiplyMatrixVector(matrix, [point.x, point.y, point.z, 1]);
+                        point.x = x;
+                        point.y = y;
+                        point.z = z;
+                    });
+                });
+            }
+
+            scale(factor) {
+                const center = this.calculateCenter();
+                this.polygons.forEach(polygon => {
+                    polygon.points.forEach(point => {
+                        point.x = center.x + (point.x - center.x) * factor;
+                        point.y = center.y + (point.y - center.y) * factor;
+                        point.z = center.z + (point.z - center.z) * factor;
+                    });
+                });
+            }
+        }
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let projection = 'parallel';
+        const fileInput = document.getElementById('file-input');
+        var viewDirection = { x: 0, y: 0, z: -1 }; // Задаем направление взгляда
+
+        // Цвет объекта
+        const objectColor = "#ff8844";
+
+        // Функция для расчета нормали к многоугольнику
+        function calculateNormal(polygon) {
+            const p0 = polygon.points[0];
+            const p1 = polygon.points[1];
+            const p2 = polygon.points[2];
+
+            const u = {
+                x: p1.x - p0.x,
+                y: p1.y - p0.y,
+                z: p1.z - p0.z
+            };
+
+            const v = {
+                x: p2.x - p0.x,
+                y: p2.y - p0.y,
+                z: p2.z - p0.z
+            };
+
+            return {
+                x: u.y * v.z - u.z * v.y,
+                y: u.z * v.x - u.x * v.z,
+                z: u.x * v.y - u.y * v.x
+            };
+        }
+
+        // Функция для нормализации вектора
+        function normalizeVector(v) {
+            const length = Math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2);
+            return {
+                x: v.x / length,
+                y: v.y / length,
+                z: v.z / length
+            };
+        }
+
+        // Скалярное произведение
+        function dotProduct(v1, v2) {
+            return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+        }
+
+        // Проверка видимости полигона (Backface Culling)
+        function isFrontFace(normal, viewDirection) {
+            return dotProduct(normal, viewDirection) < 0;
+        }
+
+        // Настройки проекций
+        const projectionSettings = {
+            axonometric: { angleX: Math.PI / 6, angleY: Math.PI / 6 }, // Углы для аксонометрии
+            perspective: { d: 500 } // Расстояние до проекционной плоскости для перспективы
+        };
+
+        // Преобразование точки в экранные координаты
+        function projectPoint(point) {
+            let { x, y, z } = point;
+
+            switch (projection) {
+                case "axonometric":
+                    const { angleX, angleY } = projectionSettings.axonometric;
+                    return {
+                        x: x * Math.cos(angleY) - y * Math.sin(angleY),
+                        y: x * Math.sin(angleX) + y * Math.cos(angleX) - z
+                    };
+                case "perspective":
+                    const { d } = projectionSettings.perspective;
+                    const factor = d / (d + z);
+                    return {
+                        x: x * factor,
+                        y: y * factor
+                    };
+                case "parallel":
+                default:
+                    return { x, y };
+            }
+        }
+
+        // Рисование 3D модели
+        function drawPolyhedron(polyhedron) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            polyhedron.polygons.forEach(polygon => {
+                // Рассчитываем нормаль к текущему многоугольнику
+                const normal = calculateNormal(polygon);
+
+                // Проверяем, является ли грань лицевой
+                if (isFrontFace(normal, viewDirection)) {
+                    // Освещение: нормализуем нормаль и вектор света
+                    const normalizedNormal = normalizeVector(normal);
+                    const lightVector = {
+                        x: viewDirection.x - polygon.points[0].x,
+                        y: viewDirection.y - polygon.points[0].y,
+                        z: viewDirection.z - polygon.points[0].z
+                    };
+                    const normalizedLight = normalizeVector(lightVector);
+
+                    // Вычисляем интенсивность света
+                    const lightIntensity = Math.max(0, dotProduct(normalizedNormal, normalizedLight));
+
+                    // Задаем цвет с учетом интенсивности
+                    const color = applyShading(objectColor, lightIntensity);
+
+                    // Рисуем многоугольник
+                    drawPolygon(polygon, color);
+                }
+            });
+        }
+
+        // Применение затенения к цвету
+        function applyShading(baseColor, intensity) {
+            const baseRgb = hexToRgb(baseColor);
+            const shadedRgb = {
+                r: Math.floor(baseRgb.r * intensity),
+                g: Math.floor(baseRgb.g * intensity),
+                b: Math.floor(baseRgb.b * intensity)
+            };
+            return rgbToHex(shadedRgb);
+        }
+
+        // Преобразование HEX в RGB
+        function hexToRgb(hex) {
+            const bigint = parseInt(hex.slice(1), 16);
+            return {
+                r: (bigint >> 16) & 255,
+                g: (bigint >> 8) & 255,
+                b: bigint & 255
+            };
+        }
+
+        // Преобразование RGB в HEX
+        function rgbToHex({ r, g, b }) {
+            return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+        }
+
+        // Функция рисования многоугольника
+        function drawPolygon(polygon, color) {
+           ctx.beginPath();
+            const projectedPoint = projectPoint(polygon.points[0]);
+            ctx.moveTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+
+            for (let i = 1; i < polygon.points.length; i++) {
+                const projectedPoint = projectPoint(polygon.points[i]);
+                ctx.lineTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+            }
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        var obj_file_vertices = [];
+        var obj_file_faces = [];
+        let objPolyhedron = null;
+
+        function loadOBJFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const contents = e.target.result;
+                const lines = contents.split('\n');
+
+                const vertices = [];
+                const faces = [];
+
+                lines.forEach(line => {
+                    const parts = line.trim().split(' ');
+                    if (parts[0] === 'v') {
+                        vertices.push({
+                            x: parseFloat(parts[1]),
+                            y: parseFloat(parts[2]),
+                            z: parseFloat(parts[3])
+                        });
+                    } else if (parts[0] === 'f') {
+                        const face = parts.slice(1).map(part => {
+                            const indices = part.split('/').map(Number);
+                            return indices[0] - 1;
+                        });
+                        faces.push(face);
+                    }
+                });
+                obj_file_vertices = vertices;
+                obj_file_faces = faces;
+                const polygons = faces.map(face => new Polygon(face.map(index => new Point(vertices[index].x, vertices[index].y, vertices[index].z))));
+                objPolyhedron = new Polyhedron(polygons);
+                polyhedron = objPolyhedron;
+                renderModel(vertices, faces);
+            };
+            reader.readAsText(file);
+        }
+
+        function renderModel(vertices, faces) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const minX = Math.min(...vertices.map(v => v.x));
+            const maxX = Math.max(...vertices.map(v => v.x));
+            const minY = Math.min(...vertices.map(v => v.y));
+            const maxY = Math.max(...vertices.map(v => v.y));
+
+            const scaleX = canvas.width / (maxX - minX);
+            const scaleY = canvas.height / (maxY - minY);
+            const scale = Math.min(scaleX, scaleY) * 0.8;
+
+            const offsetX = (canvas.width - (maxX - minX) * scale) / 2;
+            const offsetY = (canvas.height - (maxY - minY) * scale) / 2;
+
+            ctx.beginPath();
+            faces.forEach(face => {
+                face.forEach((vertexIndex, i) => {
+                    const vertex = vertices[vertexIndex];
+                    const x = (vertex.x - minX) * scale + offsetX;
+                    const y = (maxY - vertex.y) * scale + offsetY;
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                ctx.closePath();
+            });
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+
+            vertices.forEach(vertex => {
+                const x = (vertex.x - minX) * scale + offsetX;
+                const y = (maxY - vertex.y) * scale + offsetY;
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, 2 * Math.PI);
+                ctx.fillStyle = '#f00';
+                ctx.fill();
+            });
+        }
+
+        const tetrahedron = new Polyhedron([
+            new Polygon([new Point(50, 50, 50), new Point(50, -50, -50), new Point(-50, 50, -50)]),
+            new Polygon([new Point(50, 50, 50), new Point(50, -50, -50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(50, 50, 50), new Point(-50, 50, -50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(-50, 50, -50), new Point(50, -50, -50), new Point(-50, -50, 50)])
+        ]);
+
+        const hexahedron = new Polyhedron([
+            new Polygon([new Point(-50, -50, -50), new Point(-50, 50, -50), new Point(50, 50, -50), new Point(50, -50, -50)]),
+            new Polygon([new Point(-50, -50, 50), new Point(-50, 50, 50), new Point(50, 50, 50), new Point(50, -50, 50)]),
+            new Polygon([new Point(-50, -50, -50), new Point(-50, 50, -50), new Point(-50, 50, 50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(50, -50, -50), new Point(50, 50, -50), new Point(50, 50, 50), new Point(50, -50, 50)]),
+            new Polygon([new Point(-50, -50, -50), new Point(50, -50, -50), new Point(50, -50, 50), new Point(-50, -50, 50)]),
+            new Polygon([new Point(-50, 50, -50), new Point(50, 50, -50), new Point(50, 50, 50), new Point(-50, 50, 50)])
+        ]);
+
+        const octahedron = new Polyhedron([
+            new Polygon([new Point(0, 100, 0), new Point(100, 0, 0), new Point(0, 0, 100)]),
+            new Polygon([new Point(0, 100, 0), new Point(0, 0, 100), new Point(-100, 0, 0)]),
+            new Polygon([new Point(0, 100, 0), new Point(-100, 0, 0), new Point(0, 0, -100)]),
+            new Polygon([new Point(0, 100, 0), new Point(0, 0, -100), new Point(100, 0, 0)]),
+            new Polygon([new Point(0, -100, 0), new Point(100, 0, 0), new Point(0, 0, 100)]),
+            new Polygon([new Point(0, -100, 0), new Point(0, 0, 100), new Point(-100, 0, 0)]),
+            new Polygon([new Point(0, -100, 0), new Point(-100, 0, 0), new Point(0, 0, -100)]),
+            new Polygon([new Point(0, -100, 0), new Point(0, 0, -100), new Point(100, 0, 0)])
+        ]);
+
+        let polyhedron = tetrahedron;
+
+        function rotateAroundAxis() {
+            const axis = document.getElementById('axis').value;
+            const angle = parseFloat(document.getElementById('angle').value);
+            polyhedron.rotateAroundAxis(axis, angle);
+            drawPolyhedron(polyhedron);
+        }
+
+        function rotateAroundLine() {
+            const p1 = document.getElementById('point1').value.split(',').map(parseFloat);
+            const p2 = document.getElementById('point2').value.split(',').map(parseFloat);
+            const angle = parseFloat(document.getElementById('angle2').value);
+            polyhedron.rotateAroundLine(new Point(...p1), new Point(...p2), angle);
+            drawPolyhedron(polyhedron, new Point(...p1), new Point(...p2));
+        }
+
+        function applyScale() {
+            const [mx, my, mz] = document.getElementById('scale').value.split(',').map(parseFloat);
+            polyhedron.applyScale(mx, my, mz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyScaleCenter() {
+            const factor = parseFloat(document.getElementById('scale_center').value);
+            polyhedron.scale(factor);
+            drawPolyhedron(polyhedron);
+        }
+
+        function reflectAxis() {
+            const axis = document.getElementById('axis_reflect').value;
+            polyhedron.reflect(axis);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyTranslate() {
+            const [dx, dy, dz] = document.getElementById('translation').value.split(',').map(parseFloat);
+            polyhedron.applyTranslation(dx, dy, dz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function applyRotate() {
+            const [dx, dy, dz] = document.getElementById('rotation').value.split(',').map(parseFloat);
+            polyhedron.applyRotation(dx, dy, dz);
+            drawPolyhedron(polyhedron);
+        }
+
+        function rotateAroundCenter() {
+            const axis = document.getElementById('axis_rotate_center').value;
+            const angle = parseFloat(document.getElementById('angle_rotate_center').value);
+            polyhedron.rotateAroundAxis(axis, angle);
+            drawPolyhedron(polyhedron);
+        }
+
+        fileInput.addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (file) {
+                loadOBJFile(file);
+            }
+        });
+
+        document.getElementById('projection').addEventListener('change', function () {
+            projection = this.value;
+            drawPolyhedron(polyhedron);
+        });
+        
+        document.getElementById('light').addEventListener('change',function(){
+            const [dx, dy, dz] = document.getElementById('light').value.split(',').map(parseFloat);
+            viewDirection={x:dx, y:dy, z:dz};
+            drawPolyhedron(polyhedron);
+        })
+
+        document.getElementById('polyhedron').addEventListener('change', function () {
+            const selectedPolyhedron = this.value;
+            switch (selectedPolyhedron) {
+                case 'tetrahedron':
+                    polyhedron = tetrahedron;
+                    break;
+                case 'hexahedron':
+                    polyhedron = hexahedron;
+                    break;
+                case 'octahedron':
+                    polyhedron = octahedron;
+                    break;
+            }
+            drawPolyhedron(polyhedron);
+        });
+
+        drawPolyhedron(polyhedron);
+    </script>
+</body>
+
+</html>
