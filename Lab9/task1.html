@@ -340,7 +340,7 @@
         var viewDirection = { x: 0, y: 0, z: -1 }; // Задаем направление взгляда
 
         // Цвет объекта
-        const objectColor = "#ff8844";
+        const objectColor = "#ffffff";
 
         // Функция для расчета нормали к многоугольнику
         function calculateNormal(polygon) {
@@ -417,66 +417,83 @@
             }
         }
 
+        // Функция для нахождения средней глубины полигона
+        function getAverageZ(polygon) {
+            var sumZ = 0;
+
+            for (var i = 0; i < polygon.points.length; i++) {
+                sumZ += polygon.points[i].z;
+            }
+
+            return sumZ / polygon.points.length;
+        }
+
+            
+        function sortPolygonsByDepth(polygons) {
+                polygons.sort(function (a, b) {
+                    var aCenterZ = getAverageZ(a);
+                    var bCenterZ = getAverageZ(b);
+                    return -(bCenterZ - aCenterZ);
+                });
+            }
+
+        function removeHiddenFaces(poly){
+            let visiblePolygons=[];
+            let a,b,c,ab,bc,normal, skalar;
+            let worker=[];
+            if (poly.points == 3) {
+                worker.push(poly);
+            }
+            else {
+                stable = poly.points[0];
+                for (let i = 1; i < poly.points.length - 1; i++) {
+                    worker.push(new Polygon([stable, poly.points[i], poly.points[i+1]]));
+                }
+            }
+            for (let polygon of worker){
+                a = polygon.points[0];
+                b = polygon.points[1];
+                c = polygon.points[2];
+                ab = [a.x - b.x, a.y - b.y, a.z - b.z];
+                bc = [c.x - b.x, c.y - b.y, c.z - b.z];
+                normal = [ab[1] * bc[2] - ab[2] * bc[1], ab[2] * bc[0] - ab[0] * bc[2], ab[0] * bc[1] - ab[1] * bc[0]];
+
+                skalar = normal[2];
+                if (skalar<0)
+                    visiblePolygons.push(polygon);
+            }
+            sortPolygonsByDepth(visiblePolygons);
+            return visiblePolygons;
+        }
+
         // Рисование 3D модели
         function drawPolyhedron(polyhedron) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             polyhedron.polygons.forEach(polygon => {
                 // Рассчитываем нормаль к текущему многоугольнику
-                const normal = calculateNormal(polygon);
+                const normal = removeHiddenFaces(polygon);
 
                 // Проверяем, является ли грань лицевой
-                if (isFrontFace(normal, viewDirection)) {
-                    // Освещение: нормализуем нормаль и вектор света
-                    const normalizedNormal = normalizeVector(normal);
-                    const lightVector = {
-                        x: viewDirection.x - polygon.points[0].x,
-                        y: viewDirection.y - polygon.points[0].y,
-                        z: viewDirection.z - polygon.points[0].z
-                    };
-                    const normalizedLight = normalizeVector(lightVector);
+                if (normal.length!=0) {
+                    for (let poly of normal){
+                        // Освещение: нормализуем нормаль и вектор света
+                        const normalizedNormal = normalizeVector(calculateNormal(poly));
+                        const lightVector = {
+                            x: viewDirection.x - polygon.points[0].x,
+                            y: viewDirection.y - polygon.points[0].y,
+                            z: viewDirection.z - polygon.points[0].z
+                        };
+                        const normalizedLight = normalizeVector(lightVector);
 
-                    // Вычисляем интенсивность света
-                    const lightIntensity = Math.max(0, dotProduct(normalizedNormal, normalizedLight));
+                        // Вычисляем интенсивность света
+                        const lightIntensity = Math.max(0, dotProduct(normalizedNormal, normalizedLight));
 
-                    // Задаем цвет с учетом интенсивности
-                    const color = applyShading(objectColor, lightIntensity);
+                        // Задаем цвет с учетом интенсивности
+                        const color = applyShading(objectColor, lightIntensity);
 
-                    // Рисуем многоугольник
-                    drawPolygon(polygon, color);
-                }
-                else{
-                    let worker = [];
-                    if (polygon.points.length>3){
-                        stable = polygon.points[0];
-                        for (let i = 1; i < polygon.points.length - 1; i++) {
-                            worker.push(new Polygon([stable, polygon.points[i], polygon.points[i+1]]));
-                        }
+                        // Рисуем многоугольник
+                        drawPolygon(polygon, color);
                     }
-                    worker.forEach(poly=>{
-                        // Рассчитываем нормаль к текущему многоугольнику
-                        const normal = calculateNormal(poly);
-
-                        // Проверяем, является ли грань лицевой
-                        if (isFrontFace(normal, viewDirection)) {
-                            // Освещение: нормализуем нормаль и вектор света
-                            const normalizedNormal = normalizeVector(normal);
-                            const lightVector = {
-                                x: viewDirection.x - poly.points[0].x,
-                                y: viewDirection.y - poly.points[0].y,
-                                z: viewDirection.z - poly.points[0].z
-                            };
-                            const normalizedLight = normalizeVector(lightVector);
-
-                            // Вычисляем интенсивность света
-                            const lightIntensity = Math.max(0, dotProduct(normalizedNormal, normalizedLight));
-
-                            // Задаем цвет с учетом интенсивности
-                            const color = applyShading(objectColor, lightIntensity);
-
-                            // Рисуем многоугольник
-                            drawPolygon(poly, color);
-                        }
-                    })
                 }
             });
         }
