@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Toon Shading with Phong Shading</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #282c34;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #61dafb;
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .controls > div {
+            margin: 5px 0;
+        }
+        .controls label {
+            margin-right: 10px;
+        }
+        .controls button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div class="controls">
+        <div>
+            <label for="shape">Shape:</label>
+            <select id="shape" onchange="changeShape()">
+                <option value="cube">Cube</option>
+                <option value="sphere">Sphere</option>
+            </select>
+        </div>
+        <div>
+            <label for="axis">Axis:</label>
+            <select id="axis">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select>
+        </div>
+        <div>
+            <label for="angle">Angle (degrees):</label>
+            <input type="number" id="angle" min="0" max="360" value="0">
+        </div>
+        <div>
+            <label for="scale">Scale:</label>
+            <input type="number" id="scale" min="0.1" max="10" step="0.1" value="1">
+        </div>
+        <button id="rotateBtn">Rotate</button>
+        <button id="scaleBtn">Scale</button>
+    </div>
+
+    <script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const width = canvas.width;
+const height = canvas.height;
+
+const lightDirection = { x: 0, y: 0, z: 1 };
+const viewerDirection = { x: 0, y: 0, z: 1 };
+
+let vertices = [
+    { x: -1, y: -1, z: -1 },
+    { x: 1, y: -1, z: -1 },
+    { x: 1, y: 1, z: -1 },
+    { x: -1, y: 1, z: -1 },
+    { x: -1, y: -1, z: 1 },
+    { x: 1, y: -1, z: 1 },
+    { x: 1, y: 1, z: 1 },
+    { x: -1, y: 1, z: 1 }
+];
+
+let faces = [
+    [0, 1, 2, 3],
+    [4, 5, 6, 7],
+    [0, 1, 5, 4],
+    [2, 3, 7, 6],
+    [0, 3, 7, 4],
+    [1, 2, 6, 5]
+];
+
+let currentScale = 1;
+let currentRotation = { x: 0, y: 0, z: 0 };
+
+function dotProduct(v1, v2) {
+    return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+function normalize(v) {
+    const length = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+function calculateVertexNormals(vertices, faces) {
+    const vertexNormals = Array(vertices.length).fill({ x: 0, y: 0, z: 0 });
+
+    for (let face of faces) {
+        const [v1, v2, v3, v4] = face.map(i => vertices[i]);
+        const normal = normalize({
+            x: (v2.y - v1.y) * (v3.z - v1.z) - (v2.z - v1.z) * (v3.y - v1.y),
+            y: (v2.z - v1.z) * (v3.x - v1.x) - (v2.x - v1.x) * (v3.z - v1.z),
+            z: (v2.x - v1.x) * (v3.y - v1.y) - (v2.y - v1.y) * (v3.x - v1.x)
+        });
+
+        for (let i of face) {
+            vertexNormals[i].x += normal.x;
+            vertexNormals[i].y += normal.y;
+            vertexNormals[i].z += normal.z;
+        }
+    }
+
+    // Нормализуем нормали для каждой вершины
+    return vertexNormals.map(normalize);
+}
+
+function toonShading(normal, lightDirection, viewerDirection) {
+    const diffuseIntensity = Math.abs(dotProduct(normal, lightDirection));
+    const levels = 10; // Увеличиваем количество уровней
+    const toonDiffuseIntensity = Math.floor(diffuseIntensity * levels) / levels;
+
+    // Вычисление зеркального отражения
+    const reflection = {
+        x: 2 * dotProduct(normal, lightDirection) * normal.x - lightDirection.x,
+        y: 2 * dotProduct(normal, lightDirection) * normal.y - lightDirection.y,
+        z: 2 * dotProduct(normal, lightDirection) * normal.z - lightDirection.z
+    };
+    const specularIntensity = Math.pow(Math.max(dotProduct(reflection, viewerDirection), 0), 32); // 32 - показатель степени для зеркального отражения
+
+    const toonSpecularIntensity = Math.floor(specularIntensity * levels) / levels;
+
+    const totalIntensity = Math.max(toonDiffuseIntensity + toonSpecularIntensity, 0.1);
+    return totalIntensity;
+}
+
+function drawFace(face, vertexNormals) {
+    const points = face.map(i => {
+        const v = vertices[i];
+        const n = vertexNormals[i];
+        return { x: v.x * 100 + width / 2, y: v.y * 100 + height / 2, n };
+    });
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+    }
+    if (points.length === 3) {
+        ctx.lineTo(points[0].x, points[0].y);
+    } else {
+        ctx.closePath();
+    }
+
+    const gradient = ctx.createLinearGradient(points[0].x, points[0].y, points[2].x, points[2].y);
+    for (let i = 0; i < points.length; i++) {
+        const normal = normalize(points[i].n);
+        const intensity = toonShading(normal, lightDirection, viewerDirection);
+        if (!isNaN(intensity)) {
+            gradient.addColorStop(i / (points.length - 1), `rgba(255, 255, 255, ${intensity})`);
+        }
+    }
+
+    ctx.fillStyle = gradient;
+    ctx.fill();
+}
+
+function render() {
+    ctx.clearRect(0, 0, width, height);
+
+    let vertexNormals;
+    if (document.getElementById('shape').value === 'sphere') {
+        vertices = generateSphereVertices(1, 20);
+        faces = generateSphereFaces(20);
+        vertexNormals = vertices.map(v => normalize(v));
+    } else {
+        vertices = [
+            { x: -1, y: -1, z: -1 },
+            { x: 1, y: -1, z: -1 },
+            { x: 1, y: 1, z: -1 },
+            { x: -1, y: 1, z: -1 },
+            { x: -1, y: -1, z: 1 },
+            { x: 1, y: -1, z: 1 },
+            { x: 1, y: 1, z: 1 },
+            { x: -1, y: 1, z: 1 }
+        ];
+        faces = [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [0, 3, 7, 4],
+            [1, 2, 6, 5]
+        ];
+        vertexNormals = calculateVertexNormals(vertices, faces);
+    }
+
+    // Применяем текущие преобразования
+    scale(currentScale);
+    rotate('x', currentRotation.x);
+    rotate('y', currentRotation.y);
+    rotate('z', currentRotation.z);
+
+    // Пересчитываем нормали после преобразований
+    if (document.getElementById('shape').value === 'sphere') {
+        vertexNormals = vertices.map(v => normalize(v));
+    } else {
+        vertexNormals = calculateVertexNormals(vertices, faces);
+    }
+
+    for (let face of faces) {
+        drawFace(face, vertexNormals);
+    }
+}
+
+function rotate(axis, angle) {
+    const rad = angle * (Math.PI / 180);
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    for (let i = 0; i < vertices.length; i++) {
+        let v = vertices[i];
+        if (axis === 'x') {
+            const y = v.y * cos - v.z * sin;
+            const z = v.y * sin + v.z * cos;
+            v.y = y;
+            v.z = z;
+        } else if (axis === 'y') {
+            const x = v.x * cos + v.z * sin;
+            const z = -v.x * sin + v.z * cos;
+            v.x = x;
+            v.z = z;
+        } else if (axis === 'z') {
+            const x = v.x * cos - v.y * sin;
+            const y = v.x * sin + v.y * cos;
+            v.x = x;
+            v.y = y;
+        }
+    }
+}
+
+function scale(factor) {
+    for (let i = 0; i < vertices.length; i++) {
+        vertices[i].x *= factor;
+        vertices[i].y *= factor;
+        vertices[i].z *= factor;
+    }
+}
+
+function generateSphereVertices(radius, segments) {
+    const vertices = [];
+    for (let lat = 0; lat <= segments; lat++) {
+        const theta = lat * Math.PI / segments;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+
+        for (let lon = 0; lon <= segments; lon++) {
+            const phi = lon * 2 * Math.PI / segments;
+            const sinPhi = Math.sin(phi);
+            const cosPhi = Math.cos(phi);
+
+            const x = radius * sinTheta * cosPhi;
+            const y = radius * sinTheta * sinPhi;
+            const z = radius * cosTheta;
+            vertices.push({ x, y, z });
+        }
+    }
+    return vertices;
+}
+
+function generateSphereFaces(segments) {
+    const faces = [];
+    for (let lat = 0; lat < segments; lat++) {
+        for (let lon = 0; lon < segments; lon++) {
+            const first = lat * (segments + 1) + lon;
+            const second = first + segments + 1;
+            faces.push([first, second, first + 1]);
+            faces.push([second, second + 1, first + 1]);
+        }
+    }
+    return faces;
+}
+
+function changeShape() {
+    render();
+}
+
+document.getElementById('rotateBtn').onclick = function () {
+    const axis = document.getElementById('axis').value;
+    const angle = parseFloat(document.getElementById('angle').value);
+    if (axis === 'x') currentRotation.x += angle;
+    if (axis === 'y') currentRotation.y += angle;
+    if (axis === 'z') currentRotation.z += angle;
+    render();
+};
+
+document.getElementById('scaleBtn').onclick = function () {
+    const factor = parseFloat(document.getElementById('scale').value);
+    currentScale = factor;
+    render();
+};
+
+render(); // Initial render
+
+    </script>
+</body>
+</html>
