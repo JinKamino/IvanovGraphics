@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0, user-scalable=yes" name="viewport" />
+    <title>cornell</title>
+    <style>
+        .main {
+            margin: auto;
+        }
+
+        body {
+            /* background-color: gray; */
+            font:
+                1rem 'Fira Sans',
+                sans-serif;
+        }
+
+        fieldset {
+            width: 580px;
+            margin-top: 10px;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="main">
+
+        <canvas height="600" id="canvas" style="border: 1px black solid" width="600"></canvas>
+        <div>
+            <input type="range" id="reflectionSphere1" value="1" min="0" max="1" step="0.1" onchange="renderScene()">
+            <!-- <input id="reflectionSphere1" type="number" value="1" max="1" min="0" step="0.1" onchange="renderScene()"> -->
+            <label id="labelRefl1" for="reflectionSphere1">отражаемость 1 сферы</label>
+        </div>
+        <div>
+            <input type="range" id="specularitySphere1" value="51" min="-1" max="999" step="2" onchange="renderScene()">
+            <!-- <input id="reflectionSphere1" type="number" value="1" max="1" min="0" step="0.1" onchange="renderScene()"> -->
+            <label id="labelSpec1" for="specularitySphere1">глянцевость 1 сферы</label>
+        </div>
+        <div>
+            <input type="range" id="reflectionSphere2" value="0" min="0" max="1" step="0.1" onchange="renderScene()">
+            <!-- <input id="reflectionSphere1" type="number" value="1" max="1" min="0" step="0.1" onchange="renderScene()"> -->
+            <label id="labelRefl2" for="reflectionSphere2">отражаемость 2 сферы</label>
+        </div>
+        <div>
+            <input type="range" id="specularitySphere2" value="1000" min="-1" max="999" step="2"
+                onchange="renderScene()">
+            <!-- <input id="reflectionSphere1" type="number" value="1" max="1" min="0" step="0.1" onchange="renderScene()"> -->
+            <label id="labelSpec2" for="specularitySphere2">глянцевость 2 сферы</label>
+        </div>
+        <div>
+
+
+        </div>
+
+
+
+    </div>
+    <fieldset>
+        <legend>Выберите режим отображения стен</legend>
+        <div></div><input id="backwardWall" type="checkbox" onchange="renderScene()"><label>Задняя стена
+            зеркальная</label></div>
+        <div></div><input id="leftWall" type="checkbox" onchange="renderScene()"><label>Левая стена зеркальная</label>
+        </div>
+        <div></div><input id="forwardWall" type="checkbox" onchange="renderScene()"><label>Передняя стена
+            зеркальная</label></div>
+        <div><input id="rightWall" type="checkbox" onchange="renderScene()"><label>Правая стена зеркальная</label></div>
+    </fieldset>
+
+    <script>
+
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let refl1 = document.getElementById("reflectionSphere1");
+        let refl2 = document.getElementById("reflectionSphere2");
+        let spec1 = document.getElementById("specularitySphere1");
+        let spec2 = document.getElementById("specularitySphere2");
+        let lWall = document.getElementById("leftWall");
+        let rWall = document.getElementById("rightWall");
+        let bWall = document.getElementById("backwardWall");
+        let fWall = document.getElementById("forwardWall");
+        // Управление цветом
+        function Color(r, g, b) {
+            return {
+                r, g, b,
+                mul: function (n) { return new Color(this.r * n, this.g * n, this.b * n); },
+                add: function (color) { return new Color(this.r + color.r, this.g + color.g, this.b + color.b); }
+            };
+        }
+
+        // Задание пикселю цвета
+        function setPixel(x, y, color) {
+            x = canvas.width / 2 + x;
+            y = canvas.height / 2 - y - 1;
+
+            if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) {
+                return;
+            }
+
+            let offset = 4 * (x + pixels.width * y);
+            pixels.data[offset++] = color.r;
+            pixels.data[offset++] = color.g;
+            pixels.data[offset++] = color.b;
+            pixels.data[offset++] = 255;
+        }
+
+
+        // Обновляет "дату" канваса, принимая все изменения внесенные функцией setPixel
+        function updateCanvas() {
+            ctx.putImageData(pixels, 0, 0);
+        }
+
+        //очистка сцены перед загрузкой
+        function clear() {
+            canvas.width = canvas.width;
+        }
+
+        // чтобы точки не создавали свои же тени (t = 0)
+        const EPSILON = 0.001;
+
+        //вектор и связанные операции для удобства 
+        function Vec(x, y, z) {
+            return {
+                x, y, z,
+                dot: function (vec) { return this.x * vec.x + this.y * vec.y + this.z * vec.z; },
+                add: function (vec) { return new Vec(this.x + vec.x, this.y + vec.y, this.z + vec.z); },
+                sub: function (vec) { return new Vec(this.x - vec.x, this.y - vec.y, this.z - vec.z); },
+                mul: function (n) { return new Vec(this.x * n, this.y * n, this.z * n); },
+                length: function () { return Math.sqrt(this.dot(this)); }
+            }
+        }
+
+        // отраженный луч 2*N*<N,R> - R
+        function ReflectRay(v1, v2) {
+            return v2.mul(2 * v1.dot(v2)).sub(v1);
+        }
+
+        // Структура для сферы
+        function Sphere(center, radius, color, specular, reflective) {
+            this.center = center;
+            this.radius = radius;
+            this.color = color;
+            this.specular = specular; //насколько блестит -1 - не блестит, 1000 - сильный глянец
+            this.reflective = reflective; // 0 - не зеркальная поверххность 1 - идеальное зеркало
+        }
+
+        // функция для света
+        function Light(intensity, position) {
+            return { intensity, position };
+        }
+
+        // задаем все начальные параметры
+        let viewport_size = 1;
+        let projection_plane_z = 1;
+        let camera_position = new Vec(0, 0, 0);
+        let background_color = new Color(0, 0, 0);
+        //все объекты на сцене - это сферы, очень большие являются стенами и потолком  
+        let spheres = [
+            // new Sphere(new Vec(-0.4, -0.8, 2.5), 0.2, new Color(255, 255, 0), 50, 1),
+            // new Sphere(new Vec(0.4, -0.6, 3), 0.4, new Color(255, 143, 207), 1111, 0),
+            // new Sphere(new Vec(-5001, 0, 0), 5000, new Color(195, 19, 19), 1, 0),
+            // new Sphere(new Vec(0, -5001, 0), 5000, new Color(255, 255, 255), -1, 0),
+            // new Sphere(new Vec(5001, 0, 0), 5000, new Color(63, 124, 178), 1, 0),
+            // new Sphere(new Vec(0, 5001, 0), 5000, new Color(255, 255, 255), -1, 0),
+            // new Sphere(new Vec(0, 0, -4996), 5000, new Color(255, 255, 255), 1, 0),
+            // new Sphere(new Vec(0, 0, 4996), 5000, new Color(255, 255, 255), 1, 0),
+
+        ];
+
+        // можно задать больше одного источника света(зачем), интенсивность в сумме должна быть не <= 1
+        let lights = [
+            new Light(0.9, new Vec(0, .6, 3)),
+            // new Light(0.1, new Vec(0, 0, 0)),
+        ];
+
+        //глубина рекурсии при просчете отражений, чтобы мы не ушли в бесконечную рекурсию и не считали свет там, где его не должно быть
+        let recursion_depth = 5;
+
+        // 2д коорды канваса ---> 3д коорды viewportа 
+        function CanvasToViewport(x, y) {
+            return new Vec(
+                x * viewport_size / canvas.width,
+                y * viewport_size / canvas.height,
+                projection_plane_z
+            );
+        }
+
+
+        //По параметрическим уравнениям сферы и луча:
+        //нужно решить квадратное уравнение
+        //1 решение - касается
+        //2 решения - пересекает
+        //нет решений - не пересекает сферу
+        //ORIGIN (0,0,0)
+        //DIRECTION - из начала, в точку вьюпорта
+        //OC - из начала в центр сферы
+        function IntersectRaySphere(origin, direction, sphere) {
+
+            let oc = origin.sub(sphere.center);
+            let k1 = direction.dot(direction);
+            let k2 = 2 * oc.dot(direction);
+            let k3 = oc.dot(oc) - sphere.radius * sphere.radius;
+
+            let discriminant = k2 * k2 - 4 * k1 * k3;
+            if (discriminant < 0) {
+                return [Infinity, Infinity];
+            }
+
+            let t1 = (-k2 + Math.sqrt(discriminant)) / (2 * k1);
+            let t2 = (-k2 - Math.sqrt(discriminant)) / (2 * k1);
+            return [t1, t2];
+        }
+
+
+        function ComputeLighting(point, normal, view, specular) {
+
+            let intensity = 0;
+            let length_n = normal.length();
+            let length_v = view.length();
+
+            for (let i = 0; i < lights.length; i++) {
+
+                let light = lights[i];
+                let vec_l, t_max;
+                vec_l = light.position.sub(point);
+                t_max = 1.0; // т.к. у меня точечный источник света и "зайдя" за него мы можем не рассчитать тени при t = infinity
+
+
+                // Промежуток от eps до tmax потому что для t = 0 точка может создавать тень самой себя
+                let blocker = ClosestIntersection(point, vec_l, EPSILON, t_max);
+                if (blocker) {
+                    continue;
+                }
+
+                //I/A = cos(phi) = <N,L>/|N|*|L| - считаем "сколько" света осталось на поверзности при диффузном рассеивании и прибавляем к основному освещению
+                let n_dot_l = normal.dot(vec_l);
+                if (n_dot_l > 0) {//отрицательные значения косинуса игнорируем
+                    intensity += light.intensity * n_dot_l / (length_n * vec_l.length());
+                }
+
+                //считаем отраженный вектор R - он симметричен вектору света(LP = L-N*<N,L>) и прибавляем значение зеркальности к основному свету
+                //получаем R = 2*N<N,L>-L 
+                //I отраженного луча = I луча * (<R,V>/|R|*|V|)^(степень глянцевости) 
+                if (specular != -1) {
+                    let vec_r = normal.mul(2.0 * n_dot_l).sub(vec_l);
+                    let r_dot_v = vec_r.dot(view);
+                    if (r_dot_v > 0) {//отрицательные значения косинуса игнорируем
+                        intensity += light.intensity * Math.pow(r_dot_v / (vec_r.length() * length_v), specular);
+                    }
+                }
+            }
+
+            return intensity;
+        }
+
+
+        // Находит ближайщее пересечение луча и сферы на сцене
+        function ClosestIntersection(origin, direction, min_t, max_t) {
+            let closest_t = Infinity;
+            let closest_sphere = null;
+
+            for (let i = 0; i < spheres.length; i++) {
+                let ts = IntersectRaySphere(origin, direction, spheres[i]);
+                if (ts[0] < closest_t && min_t < ts[0] && ts[0] < max_t) {
+                    closest_t = ts[0];
+                    closest_sphere = spheres[i];
+                }
+                if (ts[1] < closest_t && min_t < ts[1] && ts[1] < max_t) {
+                    closest_t = ts[1];
+                    closest_sphere = spheres[i];
+                }
+            }
+
+            if (closest_sphere) {
+                return [closest_sphere, closest_t];
+            }
+            return null;
+        }
+
+
+
+
+        // Отслеживание луча
+        function TraceRay(origin, direction, min_t, max_t, depth) {
+            let intersection = ClosestIntersection(origin, direction, min_t, max_t);
+            if (!intersection) {
+                return background_color;
+            }
+
+            let closest_sphere = intersection[0];
+            let closest_t = intersection[1];
+
+            let point = origin.add(direction.mul(closest_t));//текущая точка
+            let normal = point.sub(closest_sphere.center);//нормаль вектор от центра ближайщей сферы до точки
+            normal = normal.mul(1.0 / normal.length());//так мы добиваемся, чтобы длина нормали = 1
+
+            let view = direction.mul(-1);//луч обратный вектору направления - луч "блика" летящий в камеру
+            let lighting = ComputeLighting(point, normal, view, closest_sphere.specular);
+            //умножение цвета на вычесленное значение света(так мы понимаем, что выведет на экран - итоговый цвет) 
+            let local_color = closest_sphere.color.mul(lighting);
+
+            if (closest_sphere.reflective <= 0 || depth <= 0) {
+                return local_color;
+            }
+
+            //считаем отраженный луч, чтобы понять направление при отражении
+            let reflected_ray = ReflectRay(view, normal);
+            //при отражении рекурсивный вызов
+            let reflected_color = TraceRay(point, reflected_ray, EPSILON, Infinity, depth - 1);
+            //полностью отражающие поверхности не имеют цвета, поэтому передются прошлый значения цвета для луча
+            //цвет локальный(если есть) который пойдет дальше
+            let local_contribution = local_color.mul(1 - closest_sphere.reflective);
+            //ранее увиденный цвет 
+            let reflected_contribution = reflected_color.mul(closest_sphere.reflective);
+            //сумма цветов, чтобы узнать что в итоге
+            return local_contribution.add(reflected_contribution);
+        }
+
+
+        function renderScene() {
+            clear();
+            spheres = [
+                new Sphere(new Vec(-0.4, -0.8, 2.5), 0.2, new Color(255, 255, 0), parseInt(spec1.value), parseFloat(refl1.value)),
+                // new Sphere(new Vec(0.4, -0.6, 3), 0.4, new Color(155, 105, 194), 1111, 0),
+                new Sphere(new Vec(0.4, -0.6, 3), 0.4, new Color(255, 143, 207), parseInt(spec2.value), parseFloat(refl2.value)),
+                new Sphere(new Vec(-5001, 0, 0), 5000, new Color(195, 19, 19), 1, lWall.checked),
+                new Sphere(new Vec(0, -5001, 0), 5000, new Color(255, 255, 255), -1, 0),
+                new Sphere(new Vec(5001, 0, 0), 5000, new Color(63, 124, 178), 1, rWall.checked),
+                new Sphere(new Vec(0, 5001, 0), 5000, new Color(255, 255, 255), -1, 0),
+                new Sphere(new Vec(0, 0, -4996), 5000, new Color(255, 255, 255), 1, fWall.checked),
+                new Sphere(new Vec(0, 0, 4996), 5000, new Color(255, 255, 255), 1, bWall.checked),
+                //new Sphere(new Vec(0, 0.6, 1.6), 0.01, new Color(255, 255, 255), 1),
+            ];
+            //Обход всех пикселей и их отрисовка согласно трассировке лучей
+            for (let x = -canvas.width / 2; x < canvas.width / 2; x++) {
+                for (let y = -canvas.height / 2; y < canvas.height / 2; y++) {
+                    let direction = CanvasToViewport(x, y);
+                    let color = TraceRay(camera_position, direction, 1, Infinity, recursion_depth);
+                    setPixel(x, y, color);
+                }
+            }
+
+            updateCanvas();
+        }
+
+        renderScene();
+    </script>
