@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Shading with Gouraud and Lambertian Reflection</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #282c34;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #61dafb;
+        }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .controls > div {
+            margin: 5px 0;
+        }
+        .controls label {
+            margin-right: 10px;
+        }
+        .controls button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div class="controls">
+        <div>
+            <label for="shape">Shape:</label>
+            <select id="shape">
+                <option value="cube">Cube</option>
+                <option value="sphere">Sphere</option>
+            </select>
+        </div>
+        <div>
+            <label for="axis">Axis:</label>
+            <select id="axis">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select>
+        </div>
+        <div>
+            <label for="angle">Angle (degrees):</label>
+            <input type="number" id="angle" min="0" max="360" value="0">
+        </div>
+        <div>
+            <label for="scale">Scale:</label>
+            <input type="number" id="scale" min="0.1" max="10" step="0.1" value="1">
+        </div>
+        <button id="rotateBtn">Rotate</button>
+        <button id="scaleBtn">Scale</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const width = canvas.width;
+        const height = canvas.height;
+
+        const lightDirection = { x: 0, y: 0, z: 1 };
+
+        let vertices = [
+            { x: -1, y: -1, z: -1 },
+            { x: 1, y: -1, z: -1 },
+            { x: 1, y: 1, z: -1 },
+            { x: -1, y: 1, z: -1 },
+            { x: -1, y: -1, z: 1 },
+            { x: 1, y: -1, z: 1 },
+            { x: 1, y: 1, z: 1 },
+            { x: -1, y: 1, z: 1 }
+        ];
+
+        let faces = [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [2, 3, 7, 6],
+            [0, 3, 7, 4],
+            [1, 2, 6, 5]
+        ];
+
+        function dotProduct(v1, v2) {
+            return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+        }
+
+        function normalize(v) {
+            const length = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            return { x: v.x / length, y: v.y / length, z: v.z / length };
+        }
+
+        function calculateVertexColors(vertices, lightDirection) {
+            const vertexColors = [];
+            for (let i = 0; i < vertices.length; i++) {
+                const normal = normalize(vertices[i]);
+                const intensity = Math.max(0, dotProduct(normal, lightDirection));
+                vertexColors.push(intensity);
+            }
+            return vertexColors;
+        }
+
+        function interpolateColor(c1, c2, t) {
+            return c1 + (c2 - c1) * t;
+        }
+
+        function drawFace(face, vertexColors) {
+            const points = face.map(i => {
+                const v = vertices[i];
+                const c = vertexColors[i];
+                return { x: v.x * 100 + width / 2, y: v.y * 100 + height / 2, c };
+            });
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.closePath();
+
+            const gradient = ctx.createLinearGradient(points[0].x, points[0].y, points[2].x, points[2].y);
+            gradient.addColorStop(0, `rgba(255, 255, 255, ${points[0].c})`);
+            gradient.addColorStop(1, `rgba(255, 255, 255, ${points[2].c})`);
+
+            ctx.fillStyle = gradient;
+            ctx.fill();
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, width, height);
+
+            const vertexColors = calculateVertexColors(vertices, lightDirection);
+
+            for (let face of faces) {
+                if (face.every(index => vertices[index])) {
+                    drawFace(face, vertexColors);
+                }
+            }
+        }
+
+        function rotate(axis, angle) {
+            const rad = angle * (Math.PI / 180);
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
+            for (let i = 0; i < vertices.length; i++) {
+                let v = vertices[i];
+                if (axis === 'x') {
+                    const y = v.y * cos - v.z * sin;
+                    const z = v.y * sin + v.z * cos;
+                    v.y = y;
+                    v.z = z;
+                } else if (axis === 'y') {
+                    const x = v.x * cos + v.z * sin;
+                    const z = -v.x * sin + v.z * cos;
+                    v.x = x;
+                    v.z = z;
+                } else if (axis === 'z') {
+                    const x = v.x * cos - v.y * sin;
+                    const y = v.x * sin + v.y * cos;
+                    v.x = x;
+                    v.y = y;
+                }
+            }
+        }
+
+        function scale(factor) {
+            for (let i = 0; i < vertices.length; i++) {
+                vertices[i].x *= factor;
+                vertices[i].y *= factor;
+                vertices[i].z *= factor;
+            }
+        }
+
+        function generateSphereVertices(radius, segments) {
+            const vertices = [];
+            for (let lat = 0; lat <= segments; lat++) {
+                const theta = lat * Math.PI / segments;
+                const sinTheta = Math.sin(theta);
+                const cosTheta = Math.cos(theta);
+
+                for (let lon = 0; lon <= segments; lon++) {
+                    const phi = lon * 2 * Math.PI / segments;
+                    const sinPhi = Math.sin(phi);
+                    const cosPhi = Math.cos(phi);
+
+                    const x = radius * sinTheta * cosPhi;
+                    const y = radius * sinTheta * sinPhi;
+                    const z = radius * cosTheta;
+
+                    vertices.push({ x, y, z });
+                }
+            }
+            return vertices;
+        }
+
+        function generateSphereFaces(segments) {
+            const faces = [];
+            for (let lat = 0; lat < segments; lat++) {
+                for (let lon = 0; lon < segments; lon++) {
+                    const first = lat * (segments + 1) + lon;
+                    const second = first + segments + 1;
+
+                    faces.push([first, second, first + 1]);
+                    faces.push([second, second + 1, first + 1]);
+                }
+            }
+            return faces;
+        }
+
+        document.getElementById('rotateBtn').addEventListener('click', () => {
+            const axis = document.getElementById('axis').value;
+            const angle = parseFloat(document.getElementById('angle').value);
+            rotate(axis, angle);
+            render();
+        });
+
+        document.getElementById('scaleBtn').addEventListener('click', () => {
+            const scaleFactor = parseFloat(document.getElementById('scale').value);
+            scale(scaleFactor);
+            render();
+        });
+
+        document.getElementById('shape').addEventListener('change', () => {
+            const shape = document.getElementById('shape').value;
+            if (shape === 'cube') {
+                vertices = [
+                    { x: -1, y: -1, z: -1 },
+                    { x: 1, y: -1, z: -1 },
+                    { x: 1, y: 1, z: -1 },
+                    { x: -1, y: 1, z: -1 },
+                    { x: -1, y: -1, z: 1 },
+                    { x: 1, y: -1, z: 1 },
+                    { x: 1, y: 1, z: 1 },
+                    { x: -1, y: 1, z: 1 }
+                ];
+                faces = [
+                    [0, 1, 2, 3],
+                    [4, 5, 6, 7],
+                    [0, 1, 5, 4],
+                    [2, 3, 7, 6],
+                    [0, 3, 7, 4],
+                    [1, 2, 6, 5]
+                ];
+            } else if (shape === 'sphere') {
+                vertices = generateSphereVertices(1, 20);
+                faces = generateSphereFaces(20);
+            }
+            render();
+        });
+
+        render();
+    </script>
+</body>
+</html>
