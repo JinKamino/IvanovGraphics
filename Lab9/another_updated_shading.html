@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Object Renderer</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 1px solid black;
+            margin-top: 10px;
+        }
+        #controls {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        #controls input, #controls select, #controls button {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>3D Object Renderer</h1>
+    <div id="controls">
+        <label>
+            Upload OBJ File:
+            <input type="file" id="objFile" accept=".obj">
+        </label>
+        <label>
+            Scaling Factor:
+            <input type="number" id="scaleFactor" step="0.1" value="1.0">
+            <button id="scaleButton">Scale</button>
+        </label>
+        <label>
+            Rotation Axis:
+            <select id="rotationAxis">
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+            </select>
+        </label>
+        <label>
+            Rotation Angle (degrees):
+            <input type="number" id="rotationAngle" step="1" value="0">
+            <button id="rotateButton">Rotate</button>
+        </label>
+        <label>
+            Shading Mode:
+            <select id="shadingMode">
+                <option value="gouraud">Gouraud</option>
+                <option value="phong">Phong</option>
+            </select>
+        </label>
+    </div>
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const objFileInput = document.getElementById('objFile');
+        const scaleFactorInput = document.getElementById('scaleFactor');
+        const scaleButton = document.getElementById('scaleButton');
+        const rotationAxisSelect = document.getElementById('rotationAxis');
+        const rotationAngleInput = document.getElementById('rotationAngle');
+        const rotateButton = document.getElementById('rotateButton');
+        const shadingModeSelect = document.getElementById('shadingMode');
+
+        let vertices = [];
+        let faces = [];
+        let normals = [];
+
+        const lightSource = normalize([0, 1, 0]); // Fixed light source direction (always from the top)
+        const ambientLight = 0.1;
+        const diffuseLight = 0.7;
+        const specularLight = 0.2;
+        const shininess = 16;
+        const celShadingLevels = 4;
+
+        function normalize(vector) {
+            const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val ** 2, 0));
+            return vector.map(val => val / magnitude);
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function drawLightSource() {
+            const lightPosition = [canvas.width / 2, 50]; // Light source at the top center
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(lightPosition[0], lightPosition[1], 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function parseOBJ(content) {
+            vertices = [];
+            faces = [];
+            normals = [];
+
+            const lines = content.split('\n');
+            lines.forEach(line => {
+                const parts = line.trim().split(' ');
+                if (parts[0] === 'v') {
+                    vertices.push(parts.slice(1).map(Number));
+                } else if (parts[0] === 'vn') {
+                    normals.push(normalize(parts.slice(1).map(Number)));
+                } else if (parts[0] === 'f') {
+                    faces.push(parts.slice(1).map(face => {
+                        const [vIdx, , nIdx] = face.split('/').map(Number);
+                        return { vIdx: vIdx - 1, nIdx: nIdx - 1 };
+                    }));
+                }
+            });
+        }
+
+        function gouraudShading(face, lightDir) {
+            return face.map(f => {
+                const normal = normals[f.nIdx];
+                const dot = Math.max(0, normal.reduce((sum, n, i) => sum + n * lightDir[i], 0));
+                const intensity = ambientLight + diffuseLight * dot;
+                return Math.round(intensity * 255);
+            });
+        }
+
+        function phongShading(faceVertices, faceNormals, lightDir, viewDir) {
+            return faceVertices.map((vertex, i) => {
+                const normal = faceNormals[i];
+
+                const dotDiffuse = Math.max(0, normal.reduce((sum, n, j) => sum + n * lightDir[j], 0));
+                const reflectDir = normalize(lightDir.map((l, j) => 2 * dotDiffuse * normal[j] - l));
+
+                const specular = Math.pow(
+                    Math.max(0, reflectDir.reduce((sum, r, j) => sum + r * viewDir[j], 0)),
+                    shininess
+                );
+
+                let intensity = ambientLight + diffuseLight * dotDiffuse + specularLight * specular;
+                intensity = Math.round(intensity * celShadingLevels) / celShadingLevels; // Cel-shading
+
+                return Math.round(intensity * 255);
+            });
+        }
+
+        function drawObject() {
+            clearCanvas();
+            drawLightSource();
+
+            const lightDir = lightSource;
+            const viewDir = normalize([0, 0, 1]); // Assume viewer is along z-axis
+
+            faces.forEach(face => {
+                const faceVertices = face.map(f => vertices[f.vIdx]);
+                const faceNormals = face.map(f => normals[f.nIdx]);
+                let vertexColors;
+
+                if (shadingModeSelect.value === 'gouraud') {
+                    vertexColors = gouraudShading(face, lightDir);
+                } else {
+                    vertexColors = phongShading(faceVertices, faceNormals, lightDir, viewDir);
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(faceVertices[0][0] + canvas.width / 2, -faceVertices[0][1] + canvas.height / 2);
+
+                for (let i = 1; i < faceVertices.length; i++) {
+                    ctx.lineTo(faceVertices[i][0] + canvas.width / 2, -faceVertices[i][1] + canvas.height / 2);
+                }
+
+                ctx.closePath();
+
+                const gradient = ctx.createLinearGradient(
+                    faceVertices[0][0] + canvas.width / 2,
+                    -faceVertices[0][1] + canvas.height / 2,
+                    faceVertices[1][0] + canvas.width / 2,
+                    -faceVertices[1][1] + canvas.height / 2
+                );
+
+                gradient.addColorStop(0, `rgb(${vertexColors[0]}, ${vertexColors[0]}, ${vertexColors[0]})`);
+                gradient.addColorStop(1, `rgb(${vertexColors[1]}, ${vertexColors[1]}, ${vertexColors[1]})`);
+
+                ctx.fillStyle = gradient;
+                ctx.fill();
+            });
+        }
+
+        function scaleObject(factor) {
+            vertices = vertices.map(([x, y, z]) => [x * factor, y * factor, z * factor]);
+            drawObject();
+        }
+
+        function rotateObject(axis, angle) {
+            const rad = (Math.PI / 180) * angle;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
+            vertices = vertices.map(([x, y, z]) => {
+                if (axis === 'x') {
+                    return [x, y * cos - z * sin, y * sin + z * cos];
+                } else if (axis === 'y') {
+                    return [x * cos + z * sin, y, -x * sin + z * cos];
+                } else if (axis === 'z') {
+                    return [x * cos - y * sin, x * sin + y * cos, z];
+                }
+            });
+
+            normals = normals.map(([x, y, z]) => {
+                if (axis === 'x') {
+                    return [x, y * cos - z * sin, y * sin + z * cos];
+                } else if (axis === 'y') {
+                    return [x * cos + z * sin, y, -x * sin + z * cos];
+                } else if (axis === 'z') {
+                    return [x * cos - y * sin, x * sin + y * cos, z];
+                }
+            });
+
+            drawObject();
+        }
+
+        objFileInput.addEventListener('change', event => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    parseOBJ(e.target.result);
+                    drawObject();
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        scaleButton.addEventListener('click', () => {
+            const factor = parseFloat(scaleFactorInput.value);
+            if (!isNaN(factor)) {
+                scaleObject(factor);
+            }
+        });
+
+        rotateButton.addEventListener('click', () => {
+            const axis = rotationAxisSelect.value;
+            const angle = parseFloat(rotationAngleInput.value);
+            if (!isNaN(angle)) {
+                rotateObject(axis, angle);
+            }
+        });
+
+        shadingModeSelect.addEventListener('change', drawObject);
+    </script>
+</body>
+</html>
