@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL Flat Shading</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="glCanvas" width="800" height="600"></canvas>
+    <script>
+        // Получаем контекст WebGL
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('WebGL не поддерживается вашим браузером.');
+        }
+
+        // Вершинный шейдер
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            void main() {
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+        // Фрагментный шейдер
+        const fragmentShaderSource = `
+            precision mediump float;
+            void main() {
+                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+            }
+        `;
+
+        // Компиляция шейдеров
+        function compileShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+
+            return shader;
+        }
+
+        // Создание программы
+        function createProgram(vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+
+            return program;
+        }
+
+        // Инициализация шейдеров и программы
+        const vertexShader = compileShader(vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER);
+        const program = createProgram(vertexShader, fragmentShader);
+
+        // Получаем ссылку на атрибут
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+
+        // Создаем буфер
+        const positionBuffer = gl.createBuffer();
+
+        // Устанавливаем цвет очистки экрана
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // Функция для рисования фигуры
+        function drawShape(vertices, mode) {
+            // Активируем программу шейдеров
+            gl.useProgram(program);
+
+            // Заполняем буфер данными
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            // Устанавливаем атрибут
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(positionAttributeLocation);
+
+            // Рисуем фигуру
+            gl.drawArrays(mode, 0, vertices.length / 2);
+        }
+
+        // Рисуем четырехугольник
+        const quadVertices = [
+            -0.5, -0.5,
+             0.5, -0.5,
+             0.5,  0.5,
+            -0.5,  0.5
+        ];
+        //drawShape(quadVertices, gl.TRIANGLE_FAN);
+
+        // Рисуем веер
+        const fanVertices = [
+             0.0,  0.0,
+             0.5,  0.0,
+             0.4,  0.3,
+             0.2,  0.4,
+             0.0,  0.5,
+            -0.2,  0.4,
+            -0.4,  0.3,
+            -0.5,  0.0
+        ];
+        //drawShape(fanVertices, gl.TRIANGLE_FAN);
+
+        // Рисуем правильный пятиугольник
+        const pentagonVertices = [];
+        const numSides = 5;
+        const radius = 0.5;
+        const centerX = 0.0;
+        const centerY = 0.0;
+
+        for (let i = 0; i <= numSides; i++) {
+            const angle = (i / numSides) * Math.PI * 2;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+            pentagonVertices.push(x, y);
+        }
+
+        //drawShape(pentagonVertices, gl.TRIANGLE_FAN);
+    </script>
+</body>
+</html>
