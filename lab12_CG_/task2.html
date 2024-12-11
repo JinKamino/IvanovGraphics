@@ -22,7 +22,7 @@
     <h1>Кубик с текстурой и цветом</h1>
     <canvas id="cube-texture" width="400" height="400"></canvas>
     <input type="file" id="texture-upload" accept="image/*">
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js "></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
     <script>
         const canvas = document.getElementById("cube-texture");
         const gl = setupWebGL(canvas);
@@ -57,23 +57,29 @@
         gl.useProgram(program);
 
         const vertices = [
-            -1, -1, -1, 0, 0,
-            1, -1, -1, 1, 0,
-            1, 1, -1, 1, 1,
-            -1, 1, -1, 0, 1,
-            -1, -1, 1, 0, 0,
-            1, -1, 1, 1, 0,
-            1, 1, 1, 1, 1,
-            -1, 1, 1, 0, 1
+            -1, -1, -1, 0, 0, // Вершина 0
+            1, -1, -1, 1, 0,  // Вершина 1
+            1, 1, -1, 1, 1,   // Вершина 2
+            -1, 1, -1, 0, 1,  // Вершина 3
+            -1, -1, 1, 0, 0,  // Вершина 4
+            1, -1, 1, 1, 0,   // Вершина 5
+            1, 1, 1, 1, 1,    // Вершина 6
+            -1, 1, 1, 0, 1    // Вершина 7
         ];
 
         const indices = [
+            // Передняя грань
             0, 1, 2, 0, 2, 3,
-            1, 5, 6, 1, 6, 2,
-            5, 4, 7, 5, 7, 6,
-            4, 0, 3, 4, 3, 7,
+            // Задняя грань
+            4, 5, 6, 4, 6, 7,
+            // Верхняя грань
             3, 2, 6, 3, 6, 7,
-            4, 5, 1, 4, 1, 0
+            // Нижняя грань
+            0, 1, 5, 0, 5, 4,
+            // Левая грань
+            0, 3, 7, 0, 7, 4,
+            // Правая грань
+            1, 2, 6, 1, 6, 5
         ];
 
         const positionBuffer = gl.createBuffer();
@@ -106,7 +112,15 @@
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
 
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
         let mixRatio = 0.5;
+
+        mat4.rotateX(modelViewMatrix, modelViewMatrix, Math.PI / 4);
+        mat4.rotateZ(modelViewMatrix, modelViewMatrix, Math.PI / 4);
 
         function draw() {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -153,6 +167,7 @@
                 alert("WebGL not supported!");
                 return null;
             }
+            gl.enable(gl.DEPTH_TEST); // Включаем тест глубины
             return gl;
         }
 
@@ -176,7 +191,7 @@
             gl.attachShader(program, fragmentShader);
             gl.linkProgram(program);
             if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                console.error("Program linking error:", gl.getProgramInfoLog(program));
+                console.error("Program linking error:", gl.getShaderInfoLog(program));
                 gl.deleteProgram(program);
                 return null;
             }
