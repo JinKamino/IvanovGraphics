@@ -21,25 +21,28 @@
 <body>
     <h1>Градиентный тетраэдр</h1>
     <canvas id="tetrahedron" width="400" height="400"></canvas>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js "></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
     <script>
         const canvas = document.getElementById("tetrahedron");
         const gl = setupWebGL(canvas);
 
         const vertexShaderSource = `
             attribute vec3 aPosition;
+            attribute vec3 aColor;
+            varying vec3 vColor;
             uniform mat4 uModelViewMatrix;
             uniform mat4 uProjectionMatrix;
             void main() {
                 gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                vColor = aColor;
             }
         `;
 
         const fragmentShaderSource = `
             precision mediump float;
-            uniform vec3 uColor;
+            varying vec3 vColor;
             void main() {
-                gl_FragColor = vec4(uColor, 1.0);
+                gl_FragColor = vec4(vColor, 1.0);
             }
         `;
 
@@ -49,10 +52,17 @@
         gl.useProgram(program);
 
         const vertices = [
-            1, 1, 1,
-            -1, -1, 1,
-            -1, 1, -1,
-            1, -1, -1
+            2, 2, 2,
+            -2, -2, 2,
+            -2, 2, -2,
+            2, -2, -2
+        ];
+
+        const colors = [
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+            1.0, 1.0, 0.0
         ];
 
         const indices = [
@@ -66,6 +76,10 @@
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
 
+        const colorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+
         const indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
@@ -74,21 +88,25 @@
         gl.enableVertexAttribArray(aPosition);
         gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
 
+        const aColor = gl.getAttribLocation(program, "aColor");
+        gl.enableVertexAttribArray(aColor);
+        gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
         const uModelViewMatrix = gl.getUniformLocation(program, "uModelViewMatrix");
         const uProjectionMatrix = gl.getUniformLocation(program, "uProjectionMatrix");
-        const uColor = gl.getUniformLocation(program, "uColor");
 
         const projectionMatrix = mat4.create();
         mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
 
         let modelViewMatrix = mat4.create();
         mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -5]);
+        mat4.rotateX(modelViewMatrix, modelViewMatrix, Math.PI / 3);
+        mat4.rotateZ(modelViewMatrix, modelViewMatrix, Math.PI / 6);
 
         function draw() {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.uniformMatrix4fv(uProjectionMatrix, false, projectionMatrix);
             gl.uniformMatrix4fv(uModelViewMatrix, false, modelViewMatrix);
-            gl.uniform3f(uColor, 1.0, 0.5, 0.0);
             gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
         }
 
