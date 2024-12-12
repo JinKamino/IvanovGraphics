@@ -54,7 +54,6 @@
                     vec4 mixedColor = mix(color1, color2, uMixRatio);
                     gl_FragColor = mixedColor;
                 } else {
-                    // Если текстуры не загружены, рисуем серый цвет
                     gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);
                 }
             }
@@ -65,53 +64,45 @@
         const program = createProgram(gl, vertexShader, fragmentShader);
         gl.useProgram(program);
 
-        // Вершины куба с текстурными координатами для каждой грани
         const vertices = [
-            // Передняя грань
-            -1, -1, 1, 0, 0, // Вершина 0
-            1, -1, 1, 1, 0,  // Вершина 1
-            1, 1, 1, 1, 1,   // Вершина 2
-            -1, 1, 1, 0, 1,  // Вершина 3
+            -1, -1, 1, 0, 0,
+            1, -1, 1, 1, 0,
+            1, 1, 1, 1, 1,
+            -1, 1, 1, 0, 1,
 
-            // Задняя грань
-            -1, -1, -1, 0, 0, // Вершина 4
-            1, -1, -1, 1, 0,  // Вершина 5
-            1, 1, -1, 1, 1,   // Вершина 6
-            -1, 1, -1, 0, 1,  // Вершина 7
+            -1, -1, -1, 0, 0,
+            1, -1, -1, 1, 0,
+            1, 1, -1, 1, 1,
+            -1, 1, -1, 0, 1,
 
-            // Верхняя грань
-            -1, 1, -1, 0, 0, // Вершина 8
-            1, 1, -1, 1, 0,  // Вершина 9
-            1, 1, 1, 1, 1,   // Вершина 10
-            -1, 1, 1, 0, 1,  // Вершина 11
+            -1, 1, -1, 0, 0,
+            1, 1, -1, 1, 0,
+            1, 1, 1, 1, 1,
+            -1, 1, 1, 0, 1,
 
-            // Нижняя грань
-            -1, -1, -1, 0, 0, // Вершина 12
-            1, -1, -1, 1, 0,  // Вершина 13
-            1, -1, 1, 1, 1,   // Вершина 14
-            -1, -1, 1, 0, 1,  // Вершина 15
+            -1, -1, -1, 0, 0,
+            1, -1, -1, 1, 0,
+            1, -1, 1, 1, 1,
+            -1, -1, 1, 0, 1,
 
-            // Правая грань
-            1, -1, -1, 0, 0, // Вершина 16
-            1, 1, -1, 1, 0,  // Вершина 17
-            1, 1, 1, 1, 1,   // Вершина 18
-            1, -1, 1, 0, 1,  // Вершина 19
+            1, -1, -1, 0, 0,
+            1, 1, -1, 1, 0,
+            1, 1, 1, 1, 1,
+            1, -1, 1, 0, 1,
 
-            // Левая грань
-            -1, -1, -1, 0, 0, // Вершина 20
-            -1, 1, -1, 1, 0,  // Вершина 21
-            -1, 1, 1, 1, 1,   // Вершина 22
-            -1, -1, 1, 0, 1,  // Вершина 23
+            -1, -1, -1, 0, 0,
+            -1, 1, -1, 1, 0,
+            -1, 1, 1, 1, 1,
+            -1, -1, 1, 0, 1,
         ];
 
-        // Индексы для отрисовки граней
         const indices = [
-            0, 1, 2, 0, 2, 3, // Передняя грань
-            4, 5, 6, 4, 6, 7, // Задняя грань
-            8, 9, 10, 8, 10, 11, // Верхняя грань
-            12, 13, 14, 12, 14, 15, // Нижняя грань
-            16, 17, 18, 16, 18, 19, // Правая грань
-            20, 21, 22, 20, 22, 23, // Левая грань
+            0, 1, 2, 0, 2, 3,
+            4, 5, 6, 4, 6, 7,
+            8, 9, 10, 8, 10, 11,
+            12, 13, 14, 12, 14, 15,
+            16, 17, 18, 16, 18, 19,
+            20, 21, 22, 20, 22, 23,
         ];
 
         const positionBuffer = gl.createBuffer();
@@ -157,7 +148,7 @@
         let mixRatio = 0.5;
         mat4.rotateX(modelViewMatrix, modelViewMatrix, Math.PI / 4);
         mat4.rotateZ(modelViewMatrix, modelViewMatrix, Math.PI / 4);
-        let texturesLoaded = false; // Флаг для проверки загрузки текстур
+        let texturesLoaded = false;
 
         function draw() {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -185,7 +176,7 @@
                 gl.bindTexture(gl.TEXTURE_2D, texture1);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
                 gl.generateMipmap(gl.TEXTURE_2D);
-                texturesLoaded = true; // Устанавливаем флаг, что текстура загружена
+                texturesLoaded = true;
                 draw();
             };
             image.src = URL.createObjectURL(file);
@@ -200,7 +191,7 @@
                 gl.bindTexture(gl.TEXTURE_2D, texture2);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
                 gl.generateMipmap(gl.TEXTURE_2D);
-                texturesLoaded = true; // Устанавливаем флаг, что текстура загружена
+                texturesLoaded = true;
                 draw();
             };
             image.src = URL.createObjectURL(file);
@@ -219,11 +210,9 @@
             }
         });
 
-        // Устанавливаем белый фон
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         draw();
 
-        // Common WebGL setup function
         function setupWebGL(canvas) {
             const gl = canvas.getContext("webgl");
             if (!gl) {
@@ -234,7 +223,6 @@
             return gl;
         }
 
-        // Common shader compilation function
         function compileShader(gl, source, type) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
@@ -247,7 +235,6 @@
             return shader;
         }
 
-        // Common program linking function
         function createProgram(gl, vertexShader, fragmentShader) {
             const program = gl.createProgram();
             gl.attachShader(program, vertexShader);
