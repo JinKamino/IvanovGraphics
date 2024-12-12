@@ -37,7 +37,7 @@
             void main() {
                 gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
                 vTexCoord = aTexCoord;
-                vGradientCoord = (aPosition.xy + 1.0) / 2.0; // Преобразуем координаты в диапазон [0, 1]
+                vGradientCoord = (aPosition.xy + 1.0) / 2.0;
             }
         `;
 
@@ -48,11 +48,10 @@
             varying vec2 vTexCoord;
             varying vec2 vGradientCoord;
 
-            // Функция для генерации градиента
             vec4 gradient(vec2 texCoord) {
-                float r = texCoord.x; // Красный компонент зависит от координаты x
-                float g = texCoord.y; // Зеленый компонент зависит от координаты y
-                float b = 0.5;       // Синий компонент фиксирован
+                float r = texCoord.x;
+                float g = texCoord.y;
+                float b = 0.5;
                 return vec4(r, g, b, 1.0);
             }
 
@@ -69,57 +68,44 @@
         const program = createProgram(gl, vertexShader, fragmentShader);
         gl.useProgram(program);
 
-        // Вершины куба с уникальными текстурными координатами для каждой грани
         const vertices = [
-            // Передняя грань
-            -1, -1, 1, 0, 0, // Вершина 0
-            1, -1, 1, 1, 0,  // Вершина 1
-            1, 1, 1, 1, 1,   // Вершина 2
-            -1, 1, 1, 0, 1,  // Вершина 3
+            -1, -1, 1, 0, 0,
+            1, -1, 1, 1, 0,
+            1, 1, 1, 1, 1,
+            -1, 1, 1, 0, 1,
 
-            // Задняя грань
-            -1, -1, -1, 0, 0, // Вершина 4
-            1, -1, -1, 1, 0,  // Вершина 5
-            1, 1, -1, 1, 1,   // Вершина 6
-            -1, 1, -1, 0, 1,  // Вершина 7
+            -1, -1, -1, 0, 0,
+            1, -1, -1, 1, 0,
+            1, 1, -1, 1, 1,
+            -1, 1, -1, 0, 1,
 
-            // Верхняя грань
-            -1, 1, 1, 0, 0,  // Вершина 8
-            1, 1, 1, 1, 0,   // Вершина 9
-            1, 1, -1, 1, 1,  // Вершина 10
-            -1, 1, -1, 0, 1, // Вершина 11
+            -1, 1, 1, 0, 0,
+            1, 1, 1, 1, 0,
+            1, 1, -1, 1, 1,
+            -1, 1, -1, 0, 1,
 
-            // Нижняя грань
-            -1, -1, 1, 0, 0,  // Вершина 12
-            1, -1, 1, 1, 0,   // Вершина 13
-            1, -1, -1, 1, 1,  // Вершина 14
-            -1, -1, -1, 0, 1, // Вершина 15
+            -1, -1, 1, 0, 0,
+            1, -1, 1, 1, 0,
+            1, -1, -1, 1, 1,
+            -1, -1, -1, 0, 1,
 
-            // Левая грань
-            -1, -1, 1, 0, 0,  // Вершина 16
-            -1, 1, 1, 1, 0,   // Вершина 17
-            -1, 1, -1, 1, 1,  // Вершина 18
-            -1, -1, -1, 0, 1, // Вершина 19
+            -1, -1, 1, 0, 0,
+            -1, 1, 1, 1, 0,
+            -1, 1, -1, 1, 1,
+            -1, -1, -1, 0, 1,
 
-            // Правая грань
-            1, -1, 1, 0, 0,  // Вершина 20
-            1, 1, 1, 1, 0,   // Вершина 21
-            1, 1, -1, 1, 1,  // Вершина 22
-            1, -1, -1, 0, 1   // Вершина 23
+            1, -1, 1, 0, 0,
+            1, 1, 1, 1, 0,
+            1, 1, -1, 1, 1,
+            1, -1, -1, 0, 1
         ];
 
         const indices = [
-            // Передняя грань
             0, 1, 2, 0, 2, 3,
-            // Задняя грань
             4, 5, 6, 4, 6, 7,
-            // Верхняя грань
             8, 9, 10, 8, 10, 11,
-            // Нижняя грань
             12, 13, 14, 12, 14, 15,
-            // Левая грань
             16, 17, 18, 16, 18, 19,
-            // Правая грань
             20, 21, 22, 20, 22, 23
         ];
 
@@ -201,18 +187,16 @@
 
         draw();
 
-        // Common WebGL setup function
         function setupWebGL(canvas) {
             const gl = canvas.getContext("webgl");
             if (!gl) {
                 alert("WebGL not supported!");
                 return null;
             }
-            gl.enable(gl.DEPTH_TEST); // Включаем тест глубины
+            gl.enable(gl.DEPTH_TEST);
             return gl;
         }
 
-        // Common shader compilation function
         function compileShader(gl, source, type) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
@@ -225,7 +209,6 @@
             return shader;
         }
 
-        // Common program linking function
         function createProgram(gl, vertexShader, fragmentShader) {
             const program = gl.createProgram();
             gl.attachShader(program, vertexShader);
