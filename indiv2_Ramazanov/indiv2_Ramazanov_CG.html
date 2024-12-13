@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cornell Box with Ray Tracing</title>
+    <style>
+        body {
+            font-family: Times New Roman, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        canvas {
+            border: 1px solid black;
+            margin-top: 10px;
+        }
+
+        .controls {
+            margin: 10px;
+        }
+
+        .controls input {
+            margin: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <label>Light Source X: <input type="number" id="lightX" value="1"></label>
+        <label>Light Source Y: <input type="number" id="lightY" value="2"></label>
+        <label>Light Source Z: <input type="number" id="lightZ" value="-2"></label>
+        <button id="updateLight">Update Light</button>
+        <br>
+        <label>X: <input type="number" id="objectX" value="0"></label>
+        <label>Y: <input type="number" id="objectY" value="-1"></label>
+        <label>Z: <input type="number" id="objectZ" value="-5"></label>
+        <label>Size/Radius: <input type="number" id="objectSize" value="1"></label>
+        <button id="addObject">Add Object</button>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 1000;
+        canvas.height = 800;
+
+        let objects = [];
+        let lightSource = { x: 1, y: 2, z: -2 };
+        let rotationAngle = 0;
+        let scale = 1;
+
+        function vectorAdd(v1, v2) {
+            return { x: v1.x + v2.x, y: v1.y + v2.y, z: v1.z + v2.z };
+        }
+
+        function vectorSubtract(v1, v2) {
+            return { x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z };
+        }
+
+        function vectorScale(v, scale) {
+            return { x: v.x * scale, y: v.y * scale, z: v.z * scale };
+        }
+
+        function vectorDot(v1, v2) {
+            return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+        }
+
+        function vectorLength(v) {
+            return Math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2);
+        }
+
+        function vectorNormalize(v) {
+            const length = vectorLength(v);
+            return { x: v.x / length, y: v.y / length, z: v.z / length };
+        }
+
+        function traceRay(origin, direction) {
+            let closestObject = null;
+            let closestDistance = Infinity;
+            let intersectionPoint = null;
+            let normal = null;
+
+            for (const obj of objects) {
+                const { point, dist, norm } = obj.intersect(origin, direction);
+                if (point && dist < closestDistance) {
+                    closestObject = obj;
+                    closestDistance = dist;
+                    intersectionPoint = point;
+                    normal = norm;
+                }
+            }
+            let eps=0.001;
+            if (closestObject) {
+                const lightDir = vectorNormalize(vectorSubtract(lightSource, intersectionPoint));
+                const diffuse = Math.max(0, vectorDot(normal, lightDir));
+                const color = vectorScale(closestObject.color, 50 * diffuse / (closestDistance * closestDistance));
+                const lightLen=vectorLength(vectorSubtract(lightSource, intersectionPoint));
+                for (const obj of objects) {
+                    const { point, dist, norm } = obj.intersect(vectorAdd(intersectionPoint, vectorScale(lightDir, eps)), lightDir);
+                    if (closestObject != obj && point){
+                        const Len = vectorLength(vectorSubtract(intersectionPoint, point));
+                        if (Len<lightLen){
+                            return "rgb(20, 20, 40)";
+                        }
+                    }
+                }
+                return `rgb(${Math.min(255, Math.floor(color.x * 255))}, ${Math.min(255, Math.floor(color.y * 255))}, ${Math.min(255, Math.floor(color.z * 255))})`;
+            }
+            return "rgb(20, 20, 40)";
+        }
+
+        function render() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const fov = Math.PI / 3;
+            const aspectRatio = width / height;
+            const scale = Math.tan(fov / 2);
+            ctx.clearRect(0,0, width, height);
+            const cameraPos = { x: 0, y: 0, z: 0 };
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const pixelNDC = { x: (x + 0.5) / width, y: (y + 0.5) / height };
+                    const pixelScreen = {
+                        x: (2 * pixelNDC.x - 1) * aspectRatio * scale,
+                        y: (1 - 2 * pixelNDC.y) * scale
+                    };
+                    const rayDir = vectorNormalize({ x: pixelScreen.x, y: pixelScreen.y, z: -1 });
+
+                    const color = traceRay(cameraPos, rayDir);
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+
+        class Sphere {
+            constructor(center, radius, color) {
+                this.center = center;
+                this.radius = radius;
+                this.color = color;
+            }
+
+            intersect(origin, direction) {
+                const oc = vectorSubtract(origin, this.center);
+                const a = vectorDot(direction, direction);
+                const b = 2 * vectorDot(oc, direction);
+                const c = vectorDot(oc, oc) - this.radius ** 2;
+                const discriminant = b ** 2 - 4 * a * c;
+
+                if (discriminant < 0) {
+                    return { point: null, dist: null, norm: null };
+                }
+
+                const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+                const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+                const t = t1 > 0 ? t1 : t2;
+
+                if (t < 0) {
+                    return { point: null, dist: null, norm: null };
+                }
+
+                const point = vectorAdd(origin, vectorScale(direction, t));
+                const norm = vectorNormalize(vectorSubtract(point, this.center));
+                return { point, dist: t, norm };
+            }
+        }
+
+        class Cube {
+            constructor(center, size, color) {
+                this.center = center;
+                this.size = size;
+                this.color = color;
+                this.wall=false;
+            }
+
+            intersect(origin, direction) {
+                const half = this.size / 2;
+                const min = vectorSubtract(this.center, { x: half, y: half, z: half });
+                const max = vectorAdd(this.center, { x: half, y: half, z: half });
+
+                let tMin = (min.x - origin.x) / direction.x;
+                let tMax = (max.x - origin.x) / direction.x;
+
+                if (tMin > tMax) [tMin, tMax] = [tMax, tMin];
+
+                let tyMin = (min.y - origin.y) / direction.y;
+                let tyMax = (max.y - origin.y) / direction.y;
+
+                if (tyMin > tyMax) [tyMin, tyMax] = [tyMax, tyMin];
+
+                if ((tMin > tyMax) || (tyMin > tMax)) {
+                    return { point: null, dist: null, norm: null };
+                }
+
+                if (tyMin > tMin) tMin = tyMin;
+                if (tyMax < tMax) tMax = tyMax;
+
+                let tzMin = (min.z - origin.z) / direction.z;
+                let tzMax = (max.z - origin.z) / direction.z;
+
+                if (tzMin > tzMax) [tzMin, tzMax] = [tzMax, tzMin];
+
+                if ((tMin > tzMax) || (tzMin > tMax)) {
+                    return { point: null, dist: null, norm: null };
+                }
+
+                if (tzMin > tMin) tMin = tzMin;
+                if (tzMax < tMax) tMax = tzMax;
+
+                const t = tMin > 0 ? tMin : tMax;
+
+                if (t < 0) {
+                    return { point: null, dist: null, norm: null };
+                }
+
+                const point = vectorAdd(origin, vectorScale(direction, t));
+                const normal = vectorNormalize({
+                    x: Math.abs(point.x - min.x) < 0.001 ? 1 : (Math.abs(point.x - max.x) < 0.001 ? -1 : 0),
+                    y: Math.abs(point.y - min.y) < 0.001 ? 1 : (Math.abs(point.y - max.y) < 0.001 ? -1 : 0),
+                    z: Math.abs(point.z - min.z) < 0.001 ? 1 : (Math.abs(point.z - max.z) < 0.001 ? -1 : 0)
+                });
+
+                return { point, dist: t, norm: normal };
+            }
+        }
+
+        function createRoom() {
+            const wallColor = [
+                { x: 1, y: 0, z: 0 },
+                { x: 0, y: 1, z: 0 },
+                { x: 0, y: 0, z: 1 },
+                { x: 1, y: 1, z: 1 },
+            ];
+
+            objects.push(new Cube({ x: 0, y: 0, z: -5 }, 10, wallColor[0]));
+            objects[0].wall=true;
+        }
+
+        function addObject(type, x, y, z, size, color) {
+            if (type === "sphere") {
+                objects.push(new Sphere({ x, y, z }, size, color));
+            }
+        }
+
+        document.getElementById("updateLight").addEventListener("click", () => {
+            lightSource.x = parseFloat(document.getElementById("lightX").value);
+            lightSource.y = parseFloat(document.getElementById("lightY").value);
+            lightSource.z = parseFloat(document.getElementById("lightZ").value);
+            render();
+        });
+
+        document.getElementById("addObject").addEventListener("click", () => {
+            const x = parseFloat(document.getElementById("objectX").value);
+            const y = parseFloat(document.getElementById("objectY").value);
+            const z = parseFloat(document.getElementById("objectZ").value);
+            const size = parseFloat(document.getElementById("objectSize").value);
+            addObject('sphere', x, y, z, size, { x: 0, y: 1, z: 0 });
+            render();
+        });
+        createRoom();
+        render();
+    </script>
+</body>
+
+</html>
