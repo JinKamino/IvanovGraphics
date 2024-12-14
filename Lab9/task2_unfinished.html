@@ -500,6 +500,19 @@
                     }
                 }
             });
+
+            polyhedron.polygons.forEach(polygon => {
+                const normal = removeHiddenFaces(polygon);
+                if (normal.length != 0) {
+                    for (let poly of normal) {
+                        if (shadingMode === 'gouraud') {
+                            gouraudShading(poly, viewDirection);
+                        } else if (shadingMode === 'phong') {
+                            phongShading(poly, viewDirection);
+                        }
+                    }
+                }
+            });
         }
 
         // Применение затенения к цвету
@@ -746,95 +759,129 @@
 
         drawPolyhedron(polyhedron);
 
-        // Шейдинг Гуро
-        function gouraudShading(polygon, lightDirection) {
-            const vertexColors = polygon.points.map(point => {
-                const normal = calculateNormal(polygon);
-                const lightIntensity = Math.max(0, dotProduct(normal, lightDirection));
-                return applyShading(objectColor, lightIntensity);
-            });
+function gouraudShading(polygon, lightDirection) {
+    // Calculate the color at each vertex
+    const vertexColors = polygon.points.map(point => {
+        const vertexNormal = calculateVertexNormal(polygon, point); // Calculate the normal at the vertex
+        const normalizedNormal = normalizeVector(vertexNormal);
+        const lightIntensity = Math.max(0, dotProduct(normalizedNormal, lightDirection));
+        const ambientIntensity = 0.2; // Ambient light intensity
+        const totalIntensity = lightIntensity + ambientIntensity; // Combine diffuse and ambient
+        return applyShading(objectColor, totalIntensity);
+    });
 
-            ctx.beginPath();
-            const projectedPoint = projectPoint(polygon.points[0]);
-            ctx.moveTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+    // Interpolate colors across the polygon
+    ctx.beginPath();
+    const projectedPoint = projectPoint(polygon.points[0]);
+    ctx.moveTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
 
-            for (let i = 1; i < polygon.points.length; i++) {
-                const projectedPoint = projectPoint(polygon.points[i]);
-                ctx.lineTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
-            }
-            ctx.closePath();
+    for (let i = 1; i < polygon.points.length; i++) {
+        const projectedPoint = projectPoint(polygon.points[i]);
+        ctx.lineTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+    }
+    ctx.closePath();
 
-            const gradient = ctx.createLinearGradient(
-                projectPoint(polygon.points[0]).x + canvas.width / 2,
-                projectPoint(polygon.points[0]).y + canvas.height / 2,
-                projectPoint(polygon.points[2]).x + canvas.width / 2,
-                projectPoint(polygon.points[2]).y + canvas.height / 2
-            );
-            gradient.addColorStop(0, vertexColors[0]);
-            gradient.addColorStop(0.5, vertexColors[1]);
-            gradient.addColorStop(1, vertexColors[2]);
+    // Create a gradient for Gouraud shading
+    const gradient = ctx.createLinearGradient(
+        projectPoint(polygon.points[0]).x + canvas.width / 2,
+        projectPoint(polygon.points[0]).y + canvas.height / 2,
+        projectPoint(polygon.points[2]).x + canvas.width / 2,
+        projectPoint(polygon.points[2]).y + canvas.height / 2
+    );
+    gradient.addColorStop(0, vertexColors[0]);
+    gradient.addColorStop(0.5, vertexColors[1]);
+    gradient.addColorStop(1, vertexColors[2]);
 
-            ctx.fillStyle = gradient;
-            ctx.fill();
-        }
+    ctx.fillStyle = gradient;
+    ctx.fill();
+}
 
-        // Шейдинг Фонга
-        function phongShading(polygon, lightDirection) {
-            ctx.beginPath();
-            const projectedPoint = projectPoint(polygon.points[0]);
-            ctx.moveTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+function calculateVertexNormal(polygon, vertex) {
+    // Sum the normals of the faces that share the vertex
+    let normal = { x: 0, y: 0, z: 0 };
 
-            for (let i = 1; i < polygon.points.length; i++) {
-                const projectedPoint = projectPoint(polygon.points[i]);
-                ctx.lineTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
-            }
-            ctx.closePath();
+    // Iterate through the polygon's points and calculate the normal for each face
+    for (let i = 0; i < polygon.points.length; i++) {
+        const p1 = polygon.points[i];
+        const p2 = polygon.points[(i + 1) % polygon.points.length];
+        const p3 = polygon.points[(i + 2) % polygon.points.length];
 
-            const gradient = ctx.createLinearGradient(
-                projectPoint(polygon.points[0]).x + canvas.width / 2,
-                projectPoint(polygon.points[0]).y + canvas.height / 2,
-                projectPoint(polygon.points[2]).x + canvas.width / 2,
-                projectPoint(polygon.points[2]).y + canvas.height / 2
-            );
+        // Calculate the face normal
+        const faceNormal = calculateNormal(new Polygon([p1, p2, p3]));
 
-            const normals = polygon.points.map(point => calculateNormal(polygon));
-            const interpolatedNormals = [];
+        // Add the face normal to the vertex normal
+        normal.x += faceNormal.x;
+        normal.y += faceNormal.y;
+        normal.z += faceNormal.z;
+    }
 
-            for (let i = 0; i < polygon.points.length; i++) {
-                const interpolatedNormal = normalizeVector({
-                    x: (normals[i].x + normals[(i + 1) % polygon.points.length].x) / 2,
-                    y: (normals[i].y + normals[(i + 1) % polygon.points.length].y) / 2,
-                    z: (normals[i].z + normals[(i + 1) % polygon.points.length].z) / 2
-                });
-                interpolatedNormals.push(interpolatedNormal);
-            }
+    // Normalize the resulting normal
+    return normalizeVector(normal);
+}
 
-            const lightIntensity = interpolatedNormals.map(normal => Math.max(0, dotProduct(normal, lightDirection)));
-            const colors = lightIntensity.map(intensity => applyShading(objectColor, intensity));
+function phongShading(polygon, lightDirection) {
+    // Interpolate normals across the polygon
+    const interpolatedNormals = interpolateNormals(polygon);
 
-            gradient.addColorStop(0, colors[0]);
-            gradient.addColorStop(0.5, colors[1]);
-            gradient.addColorStop(1, colors[2]);
+    // Draw the polygon and calculate color for each pixel
+    ctx.beginPath();
+    const projectedPoint = projectPoint(polygon.points[0]);
+    ctx.moveTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
 
-            ctx.fillStyle = gradient;
-            ctx.fill();
-        }
+    for (let i = 1; i < polygon.points.length; i++) {
+        const projectedPoint = projectPoint(polygon.points[i]);
+        ctx.lineTo(projectedPoint.x + canvas.width / 2, projectedPoint.y + canvas.height / 2);
+    }
+    ctx.closePath();
 
-        function drawPolyhedron(polyhedron) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            polyhedron.polygons.forEach(polygon => {
-                const normal = removeHiddenFaces(polygon);
-                if (normal.length != 0) {
-                    for (let poly of normal) {
-                        if (shadingMode === 'gouraud') {
-                            gouraudShading(poly, viewDirection);
-                        } else if (shadingMode === 'phong') {
-                            phongShading(poly, viewDirection);
-                        }
-                    }
-                }
-            });
-        }
+    // Fill the polygon with Phong shading
+    ctx.fillStyle = createPhongGradient(polygon, interpolatedNormals, lightDirection);
+    ctx.fill();
+}
+
+// Helper function to interpolate normals across the polygon
+function interpolateNormals(polygon) {
+    // Use barycentric coordinates or bilinear interpolation to interpolate normals
+    // For simplicity, assume bilinear interpolation here
+    const normals = polygon.points.map(point => calculateVertexNormal(polygon, point));
+    return (x, y) => {
+        // Interpolate normals based on pixel position (x, y)
+        // This is a placeholder for actual interpolation logic
+        return normals[0]; // Replace with proper interpolation
+    };
+}
+
+// Helper function to create a gradient for Phong shading
+function createPhongGradient(polygon, interpolatedNormals, lightDirection) {
+    const gradient = ctx.createLinearGradient(
+        projectPoint(polygon.points[0]).x + canvas.width / 2,
+        projectPoint(polygon.points[0]).y + canvas.height / 2,
+        projectPoint(polygon.points[2]).x + canvas.width / 2,
+        projectPoint(polygon.points[2]).y + canvas.height / 2
+    );
+
+    // Calculate color for each pixel using interpolated normals
+    for (let i = 0; i < polygon.points.length; i++) {
+        const normal = interpolatedNormals(polygon.points[i].x, polygon.points[i].y);
+        const normalizedNormal = normalizeVector(normal);
+        const lightIntensity = Math.max(0, dotProduct(normalizedNormal, lightDirection));
+        const ambientIntensity = 0.2; // Ambient light intensity
+        const totalIntensity = lightIntensity + ambientIntensity; // Combine diffuse and ambient
+        const color = applyShading(objectColor, totalIntensity);
+        gradient.addColorStop(i / (polygon.points.length - 1), color);
+    }
+
+    return gradient;
+}
+
+// Cel-shading (toon-shading) effect
+function applyCelShading(lightIntensity) {
+    // Apply discrete shading levels for cel-shading
+    if (lightIntensity > 0.8) return 1.0;
+    if (lightIntensity > 0.5) return 0.7;
+    if (lightIntensity > 0.2) return 0.4;
+    return 0.2;
+}
     </script>
 </body>
 
