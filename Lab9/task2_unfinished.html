@@ -500,6 +500,19 @@
                     }
                 }
             });
+	     polyhedron.polygons.forEach(polygon => {
+                const normal = removeHiddenFaces(polygon);
+                if (normal.length != 0) {
+                    for (let poly of normal) {
+                        if (shadingMode === 'gouraud') {
+                            gouraudShading(poly, viewDirection);
+                        } else if (shadingMode === 'phong') {
+                            phongShading(poly, viewDirection);
+                        }
+                    }
+                }
+            });
+
         }
 
         // Применение затенения к цвету
@@ -807,18 +820,7 @@
             ctx.fillStyle = gradient;
             ctx.fill();
         }
-        function drawPolyhedron(polyhedron) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            polyhedron.polygons.forEach(polygon => {
-                const normal = removeHiddenFaces(polygon);
-                if (normal.length != 0) {
-                    for (let poly of normal) {
-                        if (shadingMode === 'gouraud') {
-                            gouraudShading(poly, viewDirection);
-                        } else if (shadingMode === 'phong') {
-                            phongShading(poly, viewDirection);
-                        }
-                    }
-                }
-            });
-        }
+    </script>
+</body>
+
+</html>
