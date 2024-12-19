@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL Camera</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas" width="800" height="600"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <script>
+        // Получаем контекст WebGL
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('WebGL не поддерживается вашим браузером');
+        }
+
+        // Вершинный шейдер
+        const vertexShaderSource = `
+            attribute vec3 aVertexPosition;
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            void main(void) {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+            }
+        `;
+
+        // Фрагментный шейдер
+        const fragmentShaderSource = `
+            void main(void) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Белый цвет
+            }
+        `;
+
+        // Компиляция шейдеров
+        function compileShader(source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+
+            return shader;
+        }
+
+        const vertexShader = compileShader(vertexShaderSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER);
+
+        // Создание программы
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+        }
+
+        gl.useProgram(program);
+
+        // Получаем ссылки на атрибуты и униформы
+        const positionAttributeLocation = gl.getAttribLocation(program, 'aVertexPosition');
+        const modelViewMatrixUniformLocation = gl.getUniformLocation(program, 'uModelViewMatrix');
+        const projectionMatrixUniformLocation = gl.getUniformLocation(program, 'uProjectionMatrix');
+
+        // Создаем буфер для вершин сферы
+        const sphereVertices = [];
+        const sphereIndices = [];
+        const radius = 1;
+        const latitudeBands = 30;
+        const longitudeBands = 30;
+
+        // Генерация вершин сферы
+        for (let latNumber = 0; latNumber <= latitudeBands; latNumber++) {
+            const theta = latNumber * Math.PI / latitudeBands;
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
+
+            for (let longNumber = 0; longNumber <= longitudeBands; longNumber++) {
+                const phi = longNumber * 2 * Math.PI / longitudeBands;
+                const sinPhi = Math.sin(phi);
+                const cosPhi = Math.cos(phi);
+
+                const x = cosPhi * sinTheta;
+                const y = cosTheta;
+                const z = sinPhi * sinTheta;
+
+                sphereVertices.push(radius * x);
+                sphereVertices.push(radius * y);
+                sphereVertices.push(radius * z);
+            }
+        }
+
+        // Генерация индексов для треугольников
+        for (let latNumber = 0; latNumber < latitudeBands; latNumber++) {
+            for (let longNumber = 0; longNumber < longitudeBands; longNumber++) {
+                const first = latNumber * (longitudeBands + 1) + longNumber;
+                const second = first + longitudeBands + 1;
+
+                sphereIndices.push(first);
+                sphereIndices.push(second);
+                sphereIndices.push(first + 1);
+
+                sphereIndices.push(second);
+                sphereIndices.push(second + 1);
+                sphereIndices.push(first + 1);
+            }
+        }
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphereVertices), gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphereIndices), gl.STATIC_DRAW);
+
+        // Устанавливаем атрибуты
+        gl.enableVertexAttribArray(positionAttributeLocation);
+        gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+        // Матрицы
+        const projectionMatrix = mat4.create();
+        const modelViewMatrix = mat4.create();
+
+        // Настройка камеры
+        let cameraPosition = vec3.fromValues(0, 0, 5);
+        let cameraTarget = vec3.fromValues(0, 0, 0);
+        let cameraUp = vec3.fromValues(0, 1, 0);
+
+        // Функция для обновления матрицы вида
+        function updateModelViewMatrix() {
+            mat4.identity(modelViewMatrix);
+            mat4.lookAt(modelViewMatrix, cameraPosition, cameraTarget, cameraUp);
+        }
+
+        // Функция для обновления матрицы проекции
+        function updateProjectionMatrix() {
+            mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 1000.0);
+        }
+
+        // Инициализация
+        function init() {
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.enable(gl.DEPTH_TEST);
+
+            updateProjectionMatrix();
+            updateModelViewMatrix();
+        }
+
+        // Отрисовка
+        function draw() {
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            gl.uniformMatrix4fv(modelViewMatrixUniformLocation, false, modelViewMatrix);
+            gl.uniformMatrix4fv(projectionMatrixUniformLocation, false, projectionMatrix);
+
+            gl.drawElements(gl.TRIANGLES, sphereIndices.length, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // Обработка событий клавиатуры
+        const cameraSpeed = 0.1;
+        const rotationSpeed = 0.05;
+
+        function handleKeyDown(event) {
+            const direction = vec3.create();
+            vec3.subtract(direction, cameraTarget, cameraPosition);
+            vec3.normalize(direction, direction);
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    cameraPosition[1] += cameraSpeed;
+                    cameraTarget[1] += cameraSpeed;
+                    break;
+                case 'ArrowDown':
+                    cameraPosition[1] -= cameraSpeed;
+                    cameraTarget[1] -= cameraSpeed;
+                    break;
+                case 'ArrowLeft':
+                    cameraPosition[0] -= cameraSpeed;
+                    cameraTarget[0] -= cameraSpeed;
+                    break;
+                case 'ArrowRight':
+                    cameraPosition[0] += cameraSpeed;
+                    cameraTarget[0] += cameraSpeed;
+                    break;
+                case 'PageUp':
+                    vec3.scaleAndAdd(cameraPosition, cameraPosition, direction, cameraSpeed);
+                    vec3.scaleAndAdd(cameraTarget, cameraTarget, direction, cameraSpeed);
+                    break;
+                case 'PageDown':
+                    vec3.scaleAndAdd(cameraPosition, cameraPosition, direction, -cameraSpeed);
+                    vec3.scaleAndAdd(cameraTarget, cameraTarget, direction, -cameraSpeed);
+                    break;
+            }
+
+            updateModelViewMatrix();
+        }
+
+        // Обработка событий мыши для поворота камеры
+        let lastMousePosition = null;
+
+        function handleMouseMove(event) {
+            if (lastMousePosition) {
+                const deltaX = (event.clientX - lastMousePosition.x) / 20;
+                const deltaY = (event.clientY - lastMousePosition.y) / 20;
+
+                const rotationMatrix = mat4.create();
+                mat4.rotateY(rotationMatrix, rotationMatrix, -deltaX * rotationSpeed);
+                mat4.rotateX(rotationMatrix, rotationMatrix, -deltaY * rotationSpeed);
+
+                const direction = vec3.create();
+                vec3.subtract(direction, cameraTarget, cameraPosition);
+                vec3.transformMat4(direction, direction, rotationMatrix);
+                vec3.add(cameraTarget, cameraPosition, direction);
+
+                updateModelViewMatrix();
+            }
+
+            lastMousePosition = { x: event.clientX, y: event.clientY };
+        }
+
+        function handleMouseUp() {
+            lastMousePosition = null;
+        }
+
+        // Инициализация и запуск
+        init();
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        function renderLoop() {
+            draw();
+            requestAnimationFrame(renderLoop);
+        }
+
+        renderLoop();
+    </script>
+</body>
+</html>
