@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL Scene</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .light-indicator {
+            position: absolute;
+            pointer-events: none;
+        }
+        .light-dot {
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+        }
+        .light-direction {
+            width: 2px;
+            height: 50px;
+            background-color: red;
+            transform-origin: top center;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="webgl"></canvas>
+    <div style="position: absolute; top: 10px; left: 10px;">
+        <label for="lightType">Выберите тип источника света:</label>
+        <select id="lightType">
+            <option value="directional">Направленный (Глобальный)</option>
+            <option value="point">Точечный</option>
+            <option value="spot">Прожекторный</option>
+        </select>
+    </div>
+    <div class="light-indicator" id="lightIndicator">
+        <div class="light-dot"></div>
+        <div class="light-direction"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <script>
+        // Получаем canvas и контекст WebGL
+        const canvas = document.getElementById('webgl');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('WebGL не поддерживается вашим браузером');
+        }
+
+        // Устанавливаем размер canvas
+        canvas.width = 1000;
+        canvas.height = 800;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.enable(gl.DEPTH_TEST); // Включаем тест глубины
+
+        // Создаем шейдеры
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            attribute vec2 aTexCoord;
+
+            uniform mat4 uModel;
+            uniform mat4 uView;
+            uniform mat4 uProjection;
+
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main() {
+                gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+                vTexCoord = aTexCoord;
+                vNormal = mat3(uModel) * aNormal;
+                vPosition = vec3(uModel * vec4(aPosition, 1.0));
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+
+            uniform sampler2D uTexture;
+            uniform vec3 uLightColor;
+            uniform vec3 uLightPosition;
+            uniform vec3 uLightDirection;
+            uniform float uLightCutoff;
+            uniform int uLightType;
+
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+
+            void main() {
+                vec3 normal = normalize(vNormal);
+                vec3 lightDir = normalize(uLightPosition - vPosition);
+                vec3 viewDir = normalize(-vPosition);
+                vec3 reflectDir = reflect(-lightDir, normal);
+
+                float diffuse = 0.0;
+                float specular = 0.0;
+
+                if (uLightType == 0) { // Направленный свет
+                    lightDir = normalize(-uLightDirection);
+                    diffuse = max(dot(normal, lightDir), 0.0);
+                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+                } else if (uLightType == 1) { // Точечный свет
+                    float distance = length(uLightPosition - vPosition);
+                    diffuse = max(dot(normal, lightDir), 0.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                } else if (uLightType == 2) { // Прожекторный свет
+                    float theta = dot(lightDir, normalize(-uLightDirection));
+                    if (theta > uLightCutoff) {
+                        float distance = length(uLightPosition - vPosition);
+                        diffuse = max(dot(normal, lightDir), 0.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                        specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                    }
+                }
+
+                vec3 result = uLightColor * (diffuse + specular);
+                gl_FragColor = texture2D(uTexture, vTexCoord) * vec4(result, 1.0);
+            }
+        `;
+
+        // Компилируем шейдеры
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+        // Создаем программу
+        const program = createProgram(gl, vertexShader, fragmentShader);
+
+        // Получаем ссылки на uniform-переменные
+        const uModel = gl.getUniformLocation(program, 'uModel');
+        const uView = gl.getUniformLocation(program, 'uView');
+        const uProjection = gl.getUniformLocation(program, 'uProjection');
+        const uTexture = gl.getUniformLocation(program, 'uTexture');
+        const uLightColor = gl.getUniformLocation(program, 'uLightColor');
+        const uLightPosition = gl.getUniformLocation(program, 'uLightPosition');
+        const uLightDirection = gl.getUniformLocation(program, 'uLightDirection');
+        const uLightCutoff = gl.getUniformLocation(program, 'uLightCutoff');
+        const uLightType = gl.getUniformLocation(program, 'uLightType');
+
+        // Устанавливаем свет
+        gl.useProgram(program);
+        gl.uniform3f(uLightColor, 1, 1, 1);
+        gl.uniform3f(uLightPosition,  0, 0, 2);
+        gl.uniform3f(uLightDirection, -1, -1, -1);
+        gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 4));
+        gl.uniform1i(uLightType, 0);
+
+        // Матрицы
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 1000);
+        gl.uniformMatrix4fv(uProjection, false, projectionMatrix);
+
+        const viewMatrix = mat4.create();
+        mat4.lookAt(viewMatrix, [0, 1, 5], [0, 0, 0], [0, 1, 0]);
+        gl.uniformMatrix4fv(uView, false, viewMatrix);
+
+        // Функция для загрузки текстур
+        function loadTexture(url) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+
+            const level = 0;
+            const internalFormat = gl.RGBA;
+            const width = 1;
+            const height = 1;
+            const border = 0;
+            const srcFormat = gl.RGBA;
+            const srcType = gl.UNSIGNED_BYTE;
+            const pixel = new Uint8Array([255, 255, 255, 255]); // Белый цвет
+            gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border, srcFormat, srcType, pixel);
+
+            const image = new Image();
+            image.onload = function () {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, srcFormat, srcType, image);
+                gl.generateMipmap(gl.TEXTURE_2D);
+            };
+            image.src = url;
+
+            return texture;
+        }
+
+        // Функция для загрузки .obj файла
+        async function loadObj(url) {
+            const response = await fetch(url);
+            const text = await response.text();
+
+            const positions = [];
+            const normals = [];
+            const texCoords = [];
+            const vertexData = [];
+            const indices = [];
+
+            // Map to store unique vertices (position, normal, texCoord)
+            const vertexMap = new Map();
+            let vertexIndex = 0;
+
+            const lines = text.split('\n');
+
+            lines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length === 0 || parts[0] === '#') return;
+
+                switch (parts[0]) {
+                    case 'v':
+                        // Vertex position
+                        positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                        break;
+                    case 'vn':
+                        // Vertex normal
+                        normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                        break;
+                    case 'vt':
+                        // Texture coordinate
+                        texCoords.push(parseFloat(parts[1]), parseFloat(parts[2]));
+                        break;
+                    case 'f':
+                        // Face (indices for vertices)
+                        const faceIndices = [];
+                        for (let i = 1; i < parts.length; i++) {
+                            const indicesParts = parts[i].split('/');
+
+                            // Vertex position index
+                            const vIndex = parseInt(indicesParts[0]) - 1;
+
+                            // Texture coordinate index (if present)
+                            const vtIndex = indicesParts[1] ? parseInt(indicesParts[1]) - 1 : -1;
+
+                            // Normal index (if present)
+                            const vnIndex = indicesParts[2] ? parseInt(indicesParts[2]) - 1 : -1;
+
+                            // Create a unique key for this vertex (position, normal, texCoord)
+                            const vertexKey = `${vIndex}/${vtIndex}/${vnIndex}`;
+
+                            // Check if this vertex has already been added
+                            if (!vertexMap.has(vertexKey)) {
+                                // Add the vertex to the map
+                                vertexMap.set(vertexKey, vertexIndex);
+
+                                // Add the vertex data to the vertexData array
+                                vertexData.push(
+                                    positions[vIndex * 3], positions[vIndex * 3 + 1], positions[vIndex * 3 + 2], // Position
+                                    vnIndex >= 0 ? normals[vnIndex * 3] : 0, // Normal (if present)
+                                    vnIndex >= 0 ? normals[vnIndex * 3 + 1] : 0,
+                                    vnIndex >= 0 ? normals[vnIndex * 3 + 2] : 0,
+                                    vtIndex >= 0 ? texCoords[vtIndex * 2] : 0, // Texture coordinate (if present)
+                                    vtIndex >= 0 ? texCoords[vtIndex * 2 + 1] : 0
+                                );
+
+                                // Increment the vertex index
+                                vertexIndex++;
+                            }
+
+                            // Add the index for this vertex
+                            faceIndices.push(vertexMap.get(vertexKey));
+                        }
+
+                        // Triangulate the face (assuming it's convex)
+                        for (let i = 1; i < faceIndices.length - 1; i++) {
+                            indices.push(faceIndices[0], faceIndices[i], faceIndices[i + 1]);
+                        }
+                        break;
+                }
+            });
+
+            return { vertexData, indices };
+        }
+
+        // Функция для создания буфера
+        function createBuffer(data) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        // Функция для создания индексного буфера
+        function createIndexBuffer(data) {
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data), gl.STATIC_DRAW);
+            return buffer;
+        }
+
+        // Загружаем объекты и текстуры
+        Promise.all([
+            loadObj('./sphere.obj'),
+            loadObj('./utah_teapot_lowpoly.obj'),
+            loadTexture('./texture_1.jpg'),
+            loadTexture('./texture_2.jpg')
+        ]).then(([obj1, obj2, texture1, texture2]) => {
+            // Создаем буферы для объектов
+            const vertexBuffer1 = createBuffer(obj1.vertexData);
+            const indexBuffer1 = createIndexBuffer(obj1.indices);
+
+            const vertexBuffer2 = createBuffer(obj2.vertexData);
+            const indexBuffer2 = createIndexBuffer(obj2.indices);
+
+            // Рендеринг
+            function render() {
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                // Объект 1
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer1);
+                const aPosition = gl.getAttribLocation(program, 'aPosition');
+                gl.enableVertexAttribArray(aPosition);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
+
+                const aNormal = gl.getAttribLocation(program, 'aNormal');
+                gl.enableVertexAttribArray(aNormal);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
+
+                const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
+                gl.enableVertexAttribArray(aTexCoord);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 32, 24);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer1);
+                gl.bindTexture(gl.TEXTURE_2D, texture1);
+                gl.uniformMatrix4fv(uModel, false, mat4.create());
+                gl.drawElements(gl.TRIANGLES, obj1.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Объект 2
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer2);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 32, 24);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer2);
+                gl.bindTexture(gl.TEXTURE_2D, texture2);
+                const modelMatrix = mat4.create();
+                mat4.translate(modelMatrix, modelMatrix, [2, 0, 0]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix);
+                gl.drawElements(gl.TRIANGLES, obj2.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Обновляем положение и направление источника света
+                updateLightIndicator();
+
+                requestAnimationFrame(render);
+            }
+
+            render();
+        });
+
+        // Функция для создания шейдера
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Функция для создания программы
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        // Обработчик изменения типа источника света
+        document.getElementById('lightType').addEventListener('change', function (event) {
+            const lightType = event.target.value;
+            if (lightType === 'directional') {
+                gl.uniform1i(uLightType, 0);
+            } else if (lightType === 'point') {
+                gl.uniform1i(uLightType, 1);
+            } else if (lightType === 'spot') {
+                gl.uniform1i(uLightType, 2);
+            }
+        });
+
+        // Функция для обновления положения и направления источника света
+        function updateLightIndicator() {
+            const lightIndicator = document.getElementById('lightIndicator');
+            const lightPosition = gl.getUniform(program, uLightPosition);
+            const lightDirection = gl.getUniform(program, uLightDirection);
+
+            // Преобразуем координаты света в экранные координаты
+            const lightScreenPosition = projectToScreen(lightPosition);
+            const lightScreenDirection = projectToScreen(vec3.add(vec3.create(), lightPosition, lightDirection));
+
+            // Устанавливаем положение красной точки
+            lightIndicator.style.left = `${lightScreenPosition[0]}px`;
+            lightIndicator.style.top = `${lightScreenPosition[1]}px`;
+
+            // Устанавливаем направление красного прямоугольника
+            const direction = vec3.subtract(vec3.create(), lightScreenDirection, lightScreenPosition);
+            const angle = Math.atan2(direction[1], direction[0]) * 180 / Math.PI;
+            lightIndicator.querySelector('.light-direction').style.transform = `rotate(${angle}deg)`;
+        }
+
+        // Функция для преобразования мировых координат в экранные
+        function projectToScreen(worldPosition) {
+            const viewMatrix = mat4.create();
+            mat4.lookAt(viewMatrix, [0, 1, 5], [0, 0, 0], [0, 1, 0]);
+
+            const projectionMatrix = mat4.create();
+            mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 1000);
+
+            const viewProjectionMatrix = mat4.create();
+            mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
+
+            const clipSpacePosition = vec4.transformMat4(vec4.create(), vec4.fromValues(worldPosition[0], worldPosition[1], worldPosition[2], 1), viewProjectionMatrix);
+            const ndcSpacePosition = vec3.fromValues(clipSpacePosition[0] / clipSpacePosition[3], clipSpacePosition[1] / clipSpacePosition[3], clipSpacePosition[2] / clipSpacePosition[3]);
+
+            const screenX = ((ndcSpacePosition[0] + 1) / 2) * canvas.width;
+            const screenY = ((1 - ndcSpacePosition[1]) / 2) * canvas.height;
+
+            return [screenX, screenY];
+        }
+    </script>
+</body>
+</html>
