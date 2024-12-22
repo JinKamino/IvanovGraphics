@@ -39,6 +39,11 @@
             <option value="point">Точечный</option>
             <option value="spot">Прожекторный</option>
         </select>
+        <label for="shadingModel">Выберите модель освещения:</label>
+        <select id="shadingModel">
+            <option value="phong">Phong</option>
+            <option value="toon">Toon Shading</option>
+        </select>
     </div>
     <div class="light-indicator" id="lightIndicator">
         <div class="light-dot"></div>
@@ -91,6 +96,7 @@
             uniform vec3 uLightDirection;
             uniform float uLightCutoff;
             uniform int uLightType;
+            uniform int uShadingModel; // Добавляем uniform для выбора модели освещения
 
             varying vec2 vTexCoord;
             varying vec3 vNormal;
@@ -123,6 +129,21 @@
                 }
 
                 vec3 result = uLightColor * (diffuse + specular);
+
+                if (uShadingModel == 1) { // Toon Shading
+                    float intensity = dot(normal, lightDir);
+                    if (intensity > 0.8) {
+                        intensity = 1.0;
+                    } else if (intensity > 0.5) {
+                        intensity = 0.7;
+                    } else if (intensity > 0.2) {
+                        intensity = 0.4;
+                    } else {
+                        intensity = 0.2;
+                    }
+                    result = uLightColor * intensity;
+                }
+
                 gl_FragColor = texture2D(uTexture, vTexCoord) * vec4(result, 1.0);
             }
         `;
@@ -144,6 +165,7 @@
         const uLightDirection = gl.getUniformLocation(program, 'uLightDirection');
         const uLightCutoff = gl.getUniformLocation(program, 'uLightCutoff');
         const uLightType = gl.getUniformLocation(program, 'uLightType');
+        const uShadingModel = gl.getUniformLocation(program, 'uShadingModel'); // Ссылка на uniform для модели освещения
 
         // Устанавливаем свет
         gl.useProgram(program);
@@ -152,6 +174,7 @@
         gl.uniform3f(uLightDirection, 0, 0, -1); // Направление источника света
         gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 4)); // Угол прожектора
         gl.uniform1i(uLightType, 0); // Тип источника света (направленный)
+        gl.uniform1i(uShadingModel, 0); // Модель освещения (Phong)
 
         // Матрицы
         let viewProjectionMatrix = mat4.create();
@@ -391,6 +414,16 @@
                 gl.uniform1i(uLightType, 1);
             } else if (lightType === 'spot') {
                 gl.uniform1i(uLightType, 2);
+            }
+        });
+
+        // Обработчик изменения модели освещения
+        document.getElementById('shadingModel').addEventListener('change', function (event) {
+            const shadingModel = event.target.value;
+            if (shadingModel === 'phong') {
+                gl.uniform1i(uShadingModel, 0);
+            } else if (shadingModel === 'toon') {
+                gl.uniform1i(uShadingModel, 1);
             }
         });
 
