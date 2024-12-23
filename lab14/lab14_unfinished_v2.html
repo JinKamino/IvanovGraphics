@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,19 +10,23 @@
             margin: 0;
             overflow: hidden;
         }
+
         canvas {
             display: block;
         }
+
         .light-indicator {
             position: absolute;
             pointer-events: none;
         }
+
         .light-dot {
             width: 10px;
             height: 10px;
             background-color: red;
             border-radius: 50%;
         }
+
         .light-direction {
             width: 2px;
             height: 50px;
@@ -30,6 +35,7 @@
         }
     </style>
 </head>
+
 <body>
     <canvas id="webgl"></canvas>
     <div style="position: absolute; top: 10px; left: 10px;">
@@ -39,11 +45,20 @@
             <option value="point">Точечный</option>
             <option value="spot">Прожекторный</option>
         </select>
+        <label for="shader">Выберите модель:</label>
+        <select id="shader">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+        </select>
         <label for="shadingModel">Выберите модель освещения:</label>
         <select id="shadingModel">
             <option value="phong">Phong</option>
             <option value="toon">Toon Shading</option>
         </select>
+        <button onclick="setShading()">Set</button>
     </div>
     <div class="light-indicator" id="lightIndicator">
         <div class="light-dot"></div>
@@ -117,14 +132,14 @@
                     specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
                 } else if (uLightType == 1) { // Точечный свет
                     float distance = length(uLightPosition - vPosition);
-                    diffuse = max(dot(normal, lightDir), 0.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
-                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                    diffuse = max(dot(normal, lightDir), 0.0) / (0.09 * distance + 0.032 * (distance * distance));
+                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (0.09 * distance + 0.032 * (distance * distance));
                 } else if (uLightType == 2) { // Прожекторный свет
                     float theta = dot(lightDir, normalize(-uLightDirection));
                     if (theta > uLightCutoff) {
                         float distance = length(uLightPosition - vPosition);
-                        diffuse = max(dot(normal, lightDir), 0.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
-                        specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (1.0 + 0.09 * distance + 0.032 * (distance * distance));
+                        diffuse = max(dot(normal, lightDir), 0.0) / (0.01 * distance + 0.032 * (distance * distance));
+                        specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (0.01 * distance + 0.032 * (distance * distance));
                     }
                 }
 
@@ -170,11 +185,12 @@
         // Устанавливаем свет
         gl.useProgram(program);
         gl.uniform3f(uLightColor, 1, 1, 1);
-        gl.uniform3f(uLightPosition, -2, 0, 2); // Положение источника света
+        gl.uniform3f(uLightPosition, -5, 0, 4); // Положение источника света
         gl.uniform3f(uLightDirection, 0, 0, -1); // Направление источника света
-        gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 4)); // Угол прожектора
+        gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 2)); // Угол прожектора
         gl.uniform1i(uLightType, 0); // Тип источника света (направленный)
         gl.uniform1i(uShadingModel, 0); // Модель освещения (Phong)
+        var shaders=[0,0,0,0,0];
 
         // Матрицы
         let viewProjectionMatrix = mat4.create();
@@ -323,9 +339,15 @@
         Promise.all([
             loadObj('./sphere.obj'),
             loadObj('./utah_teapot_lowpoly.obj'),
+            loadObj('./cube.obj'),
+            loadObj('./sphere.obj'),
+            loadObj('./Set of Crystals.obj'),
             loadTexture('./texture_1.jpg'),
-            loadTexture('./texture_2.jpg')
-        ]).then(([obj1, obj2, texture1, texture2]) => {
+            loadTexture('./texture_2.jpg'),
+            loadTexture('./texture_3.jpg'),
+            loadTexture('./texture_4.jpg'),
+            loadTexture('./texture_5.jpg')
+        ]).then(([obj1, obj2, obj3, obj4, obj5, texture1, texture2, texture3, texture4, texture5]) => {
             // Создаем буферы для объектов
             const vertexBuffer1 = createBuffer(obj1.vertexData);
             const indexBuffer1 = createIndexBuffer(obj1.indices);
@@ -333,11 +355,21 @@
             const vertexBuffer2 = createBuffer(obj2.vertexData);
             const indexBuffer2 = createIndexBuffer(obj2.indices);
 
+            const vertexBuffer3 = createBuffer(obj3.vertexData);
+            const indexBuffer3 = createIndexBuffer(obj3.indices);
+
+            const vertexBuffer4 = createBuffer(obj4.vertexData);
+            const indexBuffer4 = createIndexBuffer(obj4.indices);
+
+            const vertexBuffer5 = createBuffer(obj5.vertexData);
+            const indexBuffer5 = createIndexBuffer(obj5.indices);
+
             // Рендеринг
             function render() {
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
                 // Объект 1
+                gl.uniform1i(uShadingModel, shaders[0]);
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer1);
                 const aPosition = gl.getAttribLocation(program, 'aPosition');
                 gl.enableVertexAttribArray(aPosition);
@@ -353,10 +385,13 @@
 
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer1);
                 gl.bindTexture(gl.TEXTURE_2D, texture1);
-                gl.uniformMatrix4fv(uModel, false, mat4.create());
+                const modelMatrix1 = mat4.create();
+                mat4.translate(modelMatrix1, modelMatrix1, [0, 0, -5]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix1);
                 gl.drawElements(gl.TRIANGLES, obj1.indices.length, gl.UNSIGNED_SHORT, 0);
 
                 // Объект 2
+                gl.uniform1i(uShadingModel, shaders[1]);
                 gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer2);
                 gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
                 gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
@@ -364,10 +399,52 @@
 
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer2);
                 gl.bindTexture(gl.TEXTURE_2D, texture2);
-                const modelMatrix = mat4.create();
-                mat4.translate(modelMatrix, modelMatrix, [2, 0, 0]);
-                gl.uniformMatrix4fv(uModel, false, modelMatrix);
+                const modelMatrix2 = mat4.create();
+                mat4.translate(modelMatrix2, modelMatrix2, [2, 0.5, 0]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix2);
                 gl.drawElements(gl.TRIANGLES, obj2.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Объект 3
+                gl.uniform1i(uShadingModel, shaders[2]);
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 32, 24);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer3);
+                gl.bindTexture(gl.TEXTURE_2D, texture3);
+                const modelMatrix3 = mat4.create();
+                mat4.translate(modelMatrix3, modelMatrix3, [2, -0.5, 0]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix3);
+                gl.drawElements(gl.TRIANGLES, obj3.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Объект 4
+                gl.uniform1i(uShadingModel, shaders[3]);
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer4);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 32, 24);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer4);
+                gl.bindTexture(gl.TEXTURE_2D, texture4);
+                const modelMatrix4 = mat4.create();
+                mat4.translate(modelMatrix4, modelMatrix4, [-2, 0, 0]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix4);
+                gl.drawElements(gl.TRIANGLES, obj4.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Объект 5
+                gl.uniform1i(uShadingModel, shaders[4]);
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer5);
+                gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 32, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 12);
+                gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 32, 24);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer5);
+                gl.bindTexture(gl.TEXTURE_2D, texture5);
+                const modelMatrix5 = mat4.create();
+                mat4.translate(modelMatrix5, modelMatrix5, [-3, -7, -15]);
+                gl.uniformMatrix4fv(uModel, false, modelMatrix5);
+                gl.drawElements(gl.TRIANGLES, obj5.indices.length, gl.UNSIGNED_SHORT, 0);
 
                 // Обновляем положение и направление источника света
                 updateLightIndicator();
@@ -418,14 +495,16 @@
         });
 
         // Обработчик изменения модели освещения
-        document.getElementById('shadingModel').addEventListener('change', function (event) {
-            const shadingModel = event.target.value;
-            if (shadingModel === 'phong') {
-                gl.uniform1i(uShadingModel, 0);
-            } else if (shadingModel === 'toon') {
-                gl.uniform1i(uShadingModel, 1);
+        function setShading(){
+            let ind=parseInt(document.getElementById('shader').value);
+            let s=document.getElementById('shadingModel').value;
+            if (s === 'phong') {
+                shaders[ind]=0;
+            } else if (s === 'toon') {
+                shaders[ind]=1;
             }
-        });
+            render();
+        }
 
         // Функция для обновления положения и направления источника света
         function updateLightIndicator() {
@@ -477,4 +556,5 @@
         });
     </script>
 </body>
+
 </html>
