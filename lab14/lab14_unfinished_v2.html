@@ -93,12 +93,14 @@
             varying vec2 vTexCoord;
             varying vec3 vNormal;
             varying vec3 vPosition;
+            varying vec3 viewDir;
 
             void main() {
                 gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
                 vTexCoord = aTexCoord;
                 vNormal = mat3(uModel) * aNormal;
                 vPosition = vec3(uModel * vec4(aPosition, 1.0));
+                viewDir = normalize((uView * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
             }
         `;
 
@@ -116,11 +118,12 @@
             varying vec2 vTexCoord;
             varying vec3 vNormal;
             varying vec3 vPosition;
+            varying vec3 viewDir;
 
             void main() {
                 vec3 normal = normalize(vNormal);
                 vec3 lightDir = normalize(uLightPosition - vPosition);
-                vec3 viewDir = normalize(-vPosition);
+                //vec3 viewDir = vec3(0, 0, 1);
                 vec3 reflectDir = reflect(-lightDir, normal);
 
                 float diffuse = 0.0;
@@ -129,17 +132,17 @@
                 if (uLightType == 0) { // Направленный свет
                     lightDir = normalize(-uLightDirection);
                     diffuse = max(dot(normal, lightDir), 0.0);
-                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 64.0);
                 } else if (uLightType == 1) { // Точечный свет
                     float distance = length(uLightPosition - vPosition);
                     diffuse = max(dot(normal, lightDir), 0.0) / (0.09 * distance + 0.032 * (distance * distance));
-                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (0.09 * distance + 0.032 * (distance * distance));
+                    specular = pow(max(dot(viewDir, reflectDir), 0.0), 64.0) / (0.09 * distance + 0.064 * (distance * distance));
                 } else if (uLightType == 2) { // Прожекторный свет
                     float theta = dot(lightDir, normalize(-uLightDirection));
                     if (theta > uLightCutoff) {
                         float distance = length(uLightPosition - vPosition);
                         diffuse = max(dot(normal, lightDir), 0.0) / (0.01 * distance + 0.032 * (distance * distance));
-                        specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0) / (0.01 * distance + 0.032 * (distance * distance));
+                        specular = pow(max(dot(viewDir, reflectDir), 0.0), 64.0) / (0.01 * distance + 0.064 * (distance * distance));
                     }
                 }
 
@@ -159,6 +162,7 @@
                     result = uLightColor * intensity;
                 }
 
+                // result = result * 0.001 + normal;
                 gl_FragColor = texture2D(uTexture, vTexCoord) * vec4(result, 1.0);
             }
         `;
@@ -181,13 +185,14 @@
         const uLightCutoff = gl.getUniformLocation(program, 'uLightCutoff');
         const uLightType = gl.getUniformLocation(program, 'uLightType');
         const uShadingModel = gl.getUniformLocation(program, 'uShadingModel'); // Ссылка на uniform для модели освещения
+        const viewDir = gl.getUniformLocation(program, 'viewDir');
 
         // Устанавливаем свет
         gl.useProgram(program);
         gl.uniform3f(uLightColor, 1, 1, 1);
-        gl.uniform3f(uLightPosition, -5, 0, 4); // Положение источника света
+        gl.uniform3f(uLightPosition, 2, -0.5, 6); // Положение источника света
         gl.uniform3f(uLightDirection, 0, 0, -1); // Направление источника света
-        gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 2)); // Угол прожектора
+        gl.uniform1f(uLightCutoff, Math.cos(Math.PI / 20)); // Угол прожектора
         gl.uniform1i(uLightType, 0); // Тип источника света (направленный)
         gl.uniform1i(uShadingModel, 0); // Модель освещения (Phong)
         var shaders=[0,0,0,0,0];
@@ -200,6 +205,7 @@
         function updateViewProjectionMatrix() {
             mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 1000);
             mat4.lookAt(viewMatrix, [0, 1, 5], [0, 0, 0], [0, 1, 0]);
+            gl.uniform3f(viewDir, [0, 1, 5], [0, 0, 0], [0, 1, 0]);
             mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
             gl.uniformMatrix4fv(uProjection, false, projectionMatrix);
             gl.uniformMatrix4fv(uView, false, viewMatrix);
@@ -503,7 +509,7 @@
             } else if (s === 'toon') {
                 shaders[ind]=1;
             }
-            render();
+            gl.uniform1i(uShadingModel, 0); // Модель освещения (Phong)
         }
 
         // Функция для обновления положения и направления источника света
