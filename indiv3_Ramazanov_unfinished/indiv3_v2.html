@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Доставка посылок (WebGL)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="webgl"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <script>
+        // Получаем canvas и контекст WebGL
+        const canvas = document.getElementById('webgl');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('Ваш браузер не поддерживает WebGL');
+        }
+
+        // Устанавливаем размер canvas
+        canvas.width = 1000;
+        canvas.height = 800;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
+        // Создаем шейдеры
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec2 aTexCoord;
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            varying vec2 vTexCoord;
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                vTexCoord = aTexCoord;
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+            varying vec2 vTexCoord;
+            uniform sampler2D uTexture;
+            uniform vec4 uColor; // Добавляем униформу для цвета
+            void main() {
+                gl_FragColor = texture2D(uTexture, vTexCoord) * uColor;
+            }
+        `;
+
+        // Компилируем шейдеры
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+        // Создаем программу
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        gl.useProgram(program);
+
+        // Получаем ссылки на атрибуты и униформы
+        const positionAttributeLocation = gl.getAttribLocation(program, 'aPosition');
+        const texCoordAttributeLocation = gl.getAttribLocation(program, 'aTexCoord');
+        const modelViewMatrixUniformLocation = gl.getUniformLocation(program, 'uModelViewMatrix');
+        const projectionMatrixUniformLocation = gl.getUniformLocation(program, 'uProjectionMatrix');
+        const textureUniformLocation = gl.getUniformLocation(program, 'uTexture');
+        const colorUniformLocation = gl.getUniformLocation(program, 'uColor'); // Ссылка на цвет
+
+        // Создаем буферы
+        const positionBuffer = gl.createBuffer();
+        const texCoordBuffer = gl.createBuffer();
+        const indexBuffer = gl.createBuffer();
+
+        // Устанавливаем перспективную проекцию
+        const fov = (45 * Math.PI) / 180; // Угол обзора
+        const aspect = canvas.width / canvas.height; // Соотношение сторон
+        const near = 0.1; // Ближняя плоскость отсечения
+        const far = 1000.0; // Дальняя плоскость отсечения
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, fov, aspect, near, far);
+
+        // Создаем матрицу вида
+        const viewMatrix = mat4.create();
+        mat4.lookAt(viewMatrix, [0, 50, 100], [0, 0, 0], [0, 1, 0]); // Камера отдалена
+
+        // Матрица дирижабля
+        const balloonModelMatrix = mat4.create();
+        mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 10, 0]); // Дирижабль теперь на y = 10
+
+        // Массив для хранения подарков (кубов)
+        const gifts = [];
+
+        // Функция для создания шейдера
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Функция для создания программы
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        // Функция для загрузки текстуры
+        function loadTexture(url) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+
+            // Заглушка для текстуры
+            const level = 0;
+            const internalFormat = gl.RGBA;
+            const width = 1;
+            const height = 1;
+            const border = 0;
+            const srcFormat = gl.RGBA;
+            const srcType = gl.UNSIGNED_BYTE;
+            const pixel = new Uint8Array([255, 255, 255, 255]); // Белый цвет
+            gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border, srcFormat, srcType, pixel);
+
+            const image = new Image();
+            image.onload = function () {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, srcFormat, srcType, image);
+                gl.generateMipmap(gl.TEXTURE_2D);
+            };
+            image.src = url;
+
+            return texture;
+        }
+
+        // Функция для загрузки .obj файла
+        function loadObj(url) {
+            return fetch(url)
+                .then(response => response.text())
+                .then(text => {
+                    const positions = [];
+                    const texCoords = [];
+                    const indices = [];
+
+                    const lines = text.split('\n');
+                    lines.forEach(line => {
+                        const parts = line.trim().split(' ');
+                        if (parts[0] === 'v') {
+                            positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                        } else if (parts[0] === 'vt') {
+                            texCoords.push(parseFloat(parts[1]), parseFloat(parts[2]));
+                        } else if (parts[0] === 'f') {
+                            for (let i = 1; i < 4; i++) {
+                                const vertex = parts[i].split('/');
+                                indices.push(parseInt(vertex[0]) - 1); // Вершина
+                                texCoords.push(parseFloat(vertex[1]) - 1); // Текстурная координата
+                            }
+                        }
+                    });
+
+                    return { positions, texCoords, indices };
+                });
+        }
+
+        // Функция для нормализации масштаба объекта
+        function normalizeObject(positions) {
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+            // Найти минимальные и максимальные значения координат
+            for (let i = 0; i < positions.length; i += 3) {
+                minX = Math.min(minX, positions[i]);
+                minY = Math.min(minY, positions[i + 1]);
+                minZ = Math.min(minZ, positions[i + 2]);
+
+                maxX = Math.max(maxX, positions[i]);
+                maxY = Math.max(maxY, positions[i + 1]);
+                maxZ = Math.max(maxZ, positions[i + 2]);
+            }
+
+            // Найти максимальный диапазон
+            const maxRange = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+
+            // Масштабировать объект
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] = (positions[i] - minX) / maxRange * 2 - 1;
+                positions[i + 1] = (positions[i + 1] - minY) / maxRange * 2 - 1;
+                positions[i + 2] = (positions[i + 2] - minZ) / maxRange * 2 - 1;
+            }
+        }
+
+        // Функция для отрисовки объекта
+        function drawObject(vertices, texCoords, indices, texture, modelMatrix, color = [1, 1, 1, 1]) {
+            // Заполняем буфер вершин
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+            // Заполняем буфер текстурных координат
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(texCoordAttributeLocation);
+            gl.vertexAttribPointer(texCoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // Заполняем индексный буфер
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+            // Устанавливаем матрицы
+            const modelViewMatrix = mat4.create();
+            mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
+            gl.uniformMatrix4fv(modelViewMatrixUniformLocation, false, modelViewMatrix);
+            gl.uniformMatrix4fv(projectionMatrixUniformLocation, false, projectionMatrix);
+
+            // Активируем текстуру
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.uniform1i(textureUniformLocation, 0);
+
+            // Устанавливаем цвет
+            gl.uniform4fv(colorUniformLocation, color);
+
+            // Рисуем объект
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // Геометрия куба
+        const cubeVertices = [
+            // Передняя грань
+            -1, -1, 1, 1, -1, 1, 1, 1, 1, -1, 1, 1,
+            // Задняя грань
+            -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1,
+            // Верхняя грань
+            -1, 1, -1, 1, 1, -1, 1, 1, 1, -1, 1, 1,
+            // Нижняя грань
+            -1, -1, -1, 1, -1, -1, 1, -1, 1, -1, -1, 1,
+            // Левая грань
+            -1, -1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1,
+            // Правая грань
+            1, -1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1
+        ];
+
+        const cubeIndices = [
+            0, 1, 2, 0, 2, 3, // Передняя грань
+            4, 5, 6, 4, 6, 7, // Задняя грань
+            8, 9, 10, 8, 10, 11, // Верхняя грань
+            12, 13, 14, 12, 14, 15, // Нижняя грань
+            16, 17, 18, 16, 18, 19, // Левая грань
+            20, 21, 22, 20, 22, 23 // Правая грань
+        ];
+
+        const cubeTexCoords = [
+            0, 0, 1, 0, 1, 1, 0, 1,
+            0, 0, 1, 0, 1, 1, 0, 1,
+            0, 0, 1, 0, 1, 1, 0, 1,
+            0, 0, 1, 0, 1, 1, 0, 1,
+            0, 0, 1, 0, 1, 1, 0, 1,
+            0, 0, 1, 0, 1, 1, 0, 1
+        ];
+
+        // Геометрия поля (зелёный пол)
+        const groundVertices = [
+            -100, 0, -100, 100, 0, -100, 100, 0, 100, -100, 0, 100
+        ];
+        const groundIndices = [0, 1, 2, 0, 2, 3];
+        const groundTexCoords = [0, 0, 1, 0, 1, 1, 0, 1];
+
+        // Загрузка моделей и текстур
+        Promise.all([
+            loadObj('xmas_tree.obj'),
+            loadObj('airship.obj'),
+            loadTexture('tree_texture.jpg'),
+            loadTexture('airship_texture.jpg')
+        ]).then(([treeData, airshipData, treeTexture, airshipTexture]) => {
+            // Нормализация масштаба объектов
+            normalizeObject(treeData.positions);
+            normalizeObject(airshipData.positions);
+
+            // Увеличение объектов в 3 раза
+            const scaleFactor = 6;
+            for (let i = 0; i < treeData.positions.length; i += 3) {
+                treeData.positions[i] *= scaleFactor;
+                treeData.positions[i + 1] *= scaleFactor;
+                treeData.positions[i + 2] *= scaleFactor;
+            }
+            for (let i = 0; i < airshipData.positions.length; i += 3) {
+                airshipData.positions[i] *= scaleFactor;
+                airshipData.positions[i + 1] *= scaleFactor;
+                airshipData.positions[i + 2] *= scaleFactor;
+            }
+
+            // Управление
+            const keys = {
+                ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+                PageUp: false, PageDown: false, Space: false
+            };
+            window.addEventListener('keydown', (e) => keys[e.code] = true);
+            window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+            // Анимация
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // Очищаем экран
+                gl.clearColor(0.5, 0.8, 1, 1);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                // Управление дирижаблем
+                if (keys.ArrowUp) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0.1, 0]);
+                if (keys.ArrowDown) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, -0.1, 0]);
+                if (keys.ArrowLeft) mat4.translate(balloonModelMatrix, balloonModelMatrix, [-0.1, 0, 0]);
+                if (keys.ArrowRight) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0.1, 0, 0]);
+                if (keys.PageUp) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0, 0.1]); // Вперёд
+                if (keys.PageDown) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0, -0.1]); // Назад
+
+                // Скидывание подарка
+                if (keys.Space) {
+                    keys.Space = false; // Однократное действие
+                    const giftMatrix = mat4.create();
+                    mat4.translate(giftMatrix, giftMatrix, [
+                        balloonModelMatrix[12], // X
+                        balloonModelMatrix[13] - 1, // Y (чуть ниже дирижабля)
+                        balloonModelMatrix[14] // Z
+                    ]);
+                    gifts.push(giftMatrix);
+                }
+
+                // Отрисовка ёлки
+                const treeModelMatrix = mat4.create();
+                mat4.translate(treeModelMatrix, treeModelMatrix, [0, 0, 0]);
+                drawObject(treeData.positions, treeData.texCoords, treeData.indices, treeTexture, treeModelMatrix);
+
+                // Отрисовка дирижабля
+                const airshipModelMatrix = mat4.create();
+                mat4.translate(airshipModelMatrix, airshipModelMatrix, [0, 10, 0]);
+                drawObject(airshipData.positions, airshipData.texCoords, airshipData.indices, airshipTexture, balloonModelMatrix);
+
+                // Отрисовка подарков (кубов)
+                gifts.forEach((giftMatrix, index) => {
+                    mat4.translate(giftMatrix, giftMatrix, [0, -0.1, 0]); // Падение подарка
+                    if (giftMatrix[13] <= 0) {
+                        gifts.splice(index, 1); // Удаляем подарок, если он коснулся земли
+                    } else {
+                        drawObject(cubeVertices, cubeTexCoords, cubeIndices, null, giftMatrix, [1, 0, 0, 1]); // Красный куб
+                    }
+                });
+
+                // Отрисовка поля (зелёный пол)
+                const groundModelMatrix = mat4.create();
+                mat4.translate(groundModelMatrix, groundModelMatrix, [0, 0, 0]);
+                drawObject(groundVertices, groundTexCoords, groundIndices, null, groundModelMatrix, [0, 1, 0, 1]); // Зелёный цвет
+            }
+
+            animate();
+        });
+    </script>
+</body>
+</html>

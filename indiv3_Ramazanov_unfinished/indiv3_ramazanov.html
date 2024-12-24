@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Доставка посылок (WebGL)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="webgl"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <script>
+        // Получаем canvas и контекст WebGL
+        const canvas = document.getElementById('webgl');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            alert('Ваш браузер не поддерживает WebGL');
+        }
+
+        // Устанавливаем размер canvas
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
+        // Создаем шейдеры
+        const vertexShaderSource = `
+            attribute vec3 aPosition;
+            attribute vec3 aColor;
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+            varying vec3 vColor;
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                vColor = aColor;
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision mediump float;
+            varying vec3 vColor;
+            void main() {
+                gl_FragColor = vec4(vColor, 1.0);
+            }
+        `;
+
+        // Компилируем шейдеры
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+        // Создаем программу
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        gl.useProgram(program);
+
+        // Получаем ссылки на атрибуты и униформы
+        const positionAttributeLocation = gl.getAttribLocation(program, 'aPosition');
+        const colorAttributeLocation = gl.getAttribLocation(program, 'aColor');
+        const modelViewMatrixUniformLocation = gl.getUniformLocation(program, 'uModelViewMatrix');
+        const projectionMatrixUniformLocation = gl.getUniformLocation(program, 'uProjectionMatrix');
+
+        // Создаем буферы
+        const positionBuffer = gl.createBuffer();
+        const colorBuffer = gl.createBuffer();
+
+        // Устанавливаем перспективную проекцию
+        const fov = (45 * Math.PI) / 180;
+        const aspect = canvas.width / canvas.height;
+        const near = 0.1;
+        const far = 100.0;
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, fov, aspect, near, far);
+
+        // Создаем матрицу вида
+        const viewMatrix = mat4.create();
+        mat4.lookAt(viewMatrix, [0, 10, 20], [0, 5, 0], [0, 1, 0]);
+
+        // Матрица дирижабля
+        const balloonModelMatrix = mat4.create();
+        mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 8, 0]); // Дирижабль теперь на y = 8
+
+        // Массив для хранения подарков
+        const gifts = [];
+
+        // Функция для создания шейдера
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        // Функция для создания программы
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program, vertexShader, fragmentShader);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+            return program;
+        }
+
+        // Функция для отрисовки объекта
+        function drawObject(vertices, colors, modelMatrix) {
+            // Заполняем буфер вершин
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+            // Заполняем буфер цветов
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(colorAttributeLocation);
+            gl.vertexAttribPointer(colorAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+            // Устанавливаем матрицы
+            const modelViewMatrix = mat4.create();
+            mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
+            gl.uniformMatrix4fv(modelViewMatrixUniformLocation, false, modelViewMatrix);
+            gl.uniformMatrix4fv(projectionMatrixUniformLocation, false, projectionMatrix);
+
+            // Рисуем объект
+            gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 3);
+        }
+
+        // Вершины для поля
+        const groundVertices = [
+            -25, 0, -25, 25, 0, -25, 25, 0, 25,
+            -25, 0, -25, 25, 0, 25, -25, 0, 25
+        ];
+        const groundColors = [
+            0.3, 0.7, 0.3, 0.3, 0.7, 0.3, 0.3, 0.7, 0.3,
+            0.3, 0.7, 0.3, 0.3, 0.7, 0.3, 0.3, 0.7, 0.3
+        ];
+
+        // Вершины для ёлки
+        const treeVertices = [
+            0, 6, 0, -3, 0, -3, 3, 0, -3,
+            0, 6, 0, 3, 0, -3, 3, 0, 3,
+            0, 6, 0, 3, 0, 3, -3, 0, 3,
+            0, 6, 0, -3, 0, 3, -3, 0, -3
+        ];
+        const treeColors = [
+            0.1, 0.5, 0.1, 0.1, 0.5, 0.1, 0.1, 0.5, 0.1,
+            0.1, 0.5, 0.1, 0.1, 0.5, 0.1, 0.1, 0.5, 0.1,
+            0.1, 0.5, 0.1, 0.1, 0.5, 0.1, 0.1, 0.5, 0.1,
+            0.1, 0.5, 0.1, 0.1, 0.5, 0.1, 0.1, 0.5, 0.1
+        ];
+
+        // Вершины для дирижабля
+        const balloonVertices = [
+            0, 2, 0, -1, 0, -1, 1, 0, -1,
+            0, 2, 0, 1, 0, -1, 1, 0, 1,
+            0, 2, 0, 1, 0, 1, -1, 0, 1,
+            0, 2, 0, -1, 0, 1, -1, 0, -1
+        ];
+        const balloonColors = [
+            1, 0.3, 0.2, 1, 0.3, 0.2, 1, 0.3, 0.2,
+            1, 0.3, 0.2, 1, 0.3, 0.2, 1, 0.3, 0.2,
+            1, 0.3, 0.2, 1, 0.3, 0.2, 1, 0.3, 0.2,
+            1, 0.3, 0.2, 1, 0.3, 0.2, 1, 0.3, 0.2
+        ];
+
+        // Вершины для подарка
+        const giftVertices = [
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+            -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+            -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+            -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5,
+            0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+            -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5,
+            0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5
+        ];
+        const giftColors = [
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1
+        ];
+
+        // Управление
+        const keys = {
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            PageUp: false, PageDown: false, Space: false
+        };
+        window.addEventListener('keydown', (e) => keys[e.code] = true);
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        // Анимация
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Очищаем экран
+            gl.clearColor(0.5, 0.8, 1, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Управление дирижаблем
+            if (keys.ArrowUp) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0.1, 0]);
+            if (keys.ArrowDown) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, -0.1, 0]);
+            if (keys.ArrowLeft) mat4.translate(balloonModelMatrix, balloonModelMatrix, [-0.1, 0, 0]);
+            if (keys.ArrowRight) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0.1, 0, 0]);
+            if (keys.PageUp) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0, 0.1]); // Вперёд
+            if (keys.PageDown) mat4.translate(balloonModelMatrix, balloonModelMatrix, [0, 0, -0.1]); // Назад
+
+            // Скидывание подарка
+            if (keys.Space) {
+                keys.Space = false; // Однократное действие
+                const giftMatrix = mat4.create();
+                mat4.translate(giftMatrix, giftMatrix, [
+                    balloonModelMatrix[12], // X
+                    balloonModelMatrix[13] - 1, // Y (чуть ниже дирижабля)
+                    balloonModelMatrix[14] // Z
+                ]);
+                gifts.push(giftMatrix);
+            }
+
+            // Отрисовка поля
+            const groundModelMatrix = mat4.create();
+            mat4.translate(groundModelMatrix, groundModelMatrix, [0, 0, 0]);
+            drawObject(groundVertices, groundColors, groundModelMatrix);
+
+            // Отрисовка ёлки
+            const treeModelMatrix = mat4.create();
+            mat4.translate(treeModelMatrix, treeModelMatrix, [0, 3, 0]);
+            drawObject(treeVertices, treeColors, treeModelMatrix);
+
+            // Отрисовка дирижабля
+            drawObject(balloonVertices, balloonColors, balloonModelMatrix);
+
+            // Отрисовка подарков
+            gifts.forEach((giftMatrix, index) => {
+                mat4.translate(giftMatrix, giftMatrix, [0, -0.05, 0]); // Падение подарка
+                if (giftMatrix[13] <= 0) {
+                    gifts.splice(index, 1); // Удаляем подарок, если он коснулся земли
+                } else {
+                    drawObject(giftVertices, giftColors, giftMatrix);
+                }
+            });
+        }
+
+        animate();
+    </script>
+</body>
+</html>
