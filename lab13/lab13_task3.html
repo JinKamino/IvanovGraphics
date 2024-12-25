@@ -3,179 +3,289 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL Camera</title>
+    <title>WebGL Solar System with Camera</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
+        body { margin: 0;}
+        canvas { display: block;  margin-top: 70px;}
+        #startButton {
+            position: absolute;
+            top: 50px;
+            left: 10px;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            display: none;
         }
-        canvas {
-            display: block;
+        #startButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        input {
+            margin: 5px;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
 </head>
 <body>
-    <canvas id="glcanvas" width="800" height="600"></canvas>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <input type="file" id="model1" accept=".obj">
+    <input type="file" id="texture1" accept=".jpg">
+    <input type="file" id="model2" accept=".obj">
+    <input type="file" id="texture2" accept=".jpg">
+    <button id="startButton" disabled>Start Rendering</button>
+    <canvas id="glcanvas" width="1200" height="800"></canvas>
     <script>
-        // Получаем контекст WebGL
-        const canvas = document.getElementById('glcanvas');
-        const gl = canvas.getContext('webgl');
+        let gl, program, bigModel, smallModel, bigTexture, smallTexture;
+        let bigModelInfo = {}, smallModelInfo = {};
+        let planets = [];
+        let filesLoaded = { model1: false, texture1: false, model2: false, texture2: false };
 
-        if (!gl) {
-            alert('WebGL не поддерживается вашим браузером');
-        }
+        let cameraPosition = vec3.fromValues(0, 0, 20); // Начальная позиция камеры
+        let cameraTarget = vec3.fromValues(-30, -20, 5); // Начальная цель камеры
+        let cameraUp = vec3.fromValues(0, 1, 0); // Вектор "вверх"
+        const cameraSpeed = 0.1; // Скорость перемещения камеры
+        const rotationSpeed = 0.05; // Скорость вращения камеры
 
-        // Вершинный шейдер
         const vertexShaderSource = `
-            attribute vec3 aVertexPosition;
+            attribute vec3 aPosition;
+            attribute vec2 aTexCoord;
+            attribute vec3 aNormal;
             uniform mat4 uModelViewMatrix;
             uniform mat4 uProjectionMatrix;
-            void main(void) {
-                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+                vTexCoord = aTexCoord;
+                vNormal = aNormal;
             }
         `;
 
-        // Фрагментный шейдер
         const fragmentShaderSource = `
-            void main(void) {
-                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Белый цвет
+            precision mediump float;
+            varying vec2 vTexCoord;
+            varying vec3 vNormal;
+            uniform sampler2D uSampler;
+            void main() {
+                gl_FragColor = texture2D(uSampler, vTexCoord);
             }
         `;
 
-        // Компиляция шейдеров
-        function compileShader(source, type) {
+        function initWebGL() {
+            const canvas = document.getElementById('glcanvas');
+            if (!canvas) {
+                alert('Canvas element not found!');
+                return;
+            }
+            gl = canvas.getContext('webgl');
+            if (!gl) {
+                alert('Unable to initialize WebGL. Your browser may not support it.');
+                return;
+            }
+            program = createShaderProgram(vertexShaderSource, fragmentShaderSource);
+            gl.useProgram(program);
+            gl.enable(gl.DEPTH_TEST);
+        }
+
+        function createShaderProgram(vsSource, fsSource) {
+            const vertexShader = loadShader(gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = loadShader(gl.FRAGMENT_SHADER, fsSource);
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+                return null;
+            }
+            return shaderProgram;
+        }
+
+        function loadShader(type, source) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
             gl.compileShader(shader);
-
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error('Ошибка компиляции шейдера:', gl.getShaderInfoLog(shader));
+                alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
                 gl.deleteShader(shader);
                 return null;
             }
-
             return shader;
         }
 
-        const vertexShader = compileShader(vertexShaderSource, gl.VERTEX_SHADER);
-        const fragmentShader = compileShader(fragmentShaderSource, gl.FRAGMENT_SHADER);
-
-        // Создание программы
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Ошибка линковки программы:', gl.getProgramInfoLog(program));
+        function loadModel(file, callback) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const text = event.target.result;
+                const lines = text.split('\n');
+                const vertices = [], texCoords = [], normals = [], faces = [];
+                lines.forEach(line => {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts[0] === 'v') vertices.push(parts.slice(1).map(Number));
+                    else if (parts[0] === 'vt') texCoords.push(parts.slice(1).map(Number));
+                    else if (parts[0] === 'vn') normals.push(parts.slice(1).map(Number));
+                    else if (parts[0] === 'f') {
+                        const face = [];
+                        for (let i = 1; i < parts.length; i++) {
+                            const indices = parts[i].split('/').map(Number);
+                            face.push(indices);
+                        }
+                        faces.push(face);
+                    }
+                });
+                callback({ vertices, texCoords, normals, faces });
+            };
+            reader.readAsText(file);
         }
 
-        gl.useProgram(program);
+        function loadTexture(file, callback) {
+            if (!gl) {
+                console.error('WebGL context is not initialized.');
+                return;
+            }
+            const image = new Image();
+            image.onload = function() {
+                const texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                callback(texture);
+            };
+            image.src = URL.createObjectURL(file);
+        }
 
-        // Получаем ссылки на атрибуты и униформы
-        const positionAttributeLocation = gl.getAttribLocation(program, 'aVertexPosition');
-        const modelViewMatrixUniformLocation = gl.getUniformLocation(program, 'uModelViewMatrix');
-        const projectionMatrixUniformLocation = gl.getUniformLocation(program, 'uProjectionMatrix');
-
-        // Создаем буфер для вершин сферы
-        const sphereVertices = [];
-        const sphereIndices = [];
-        const radius = 1;
-        const latitudeBands = 30;
-        const longitudeBands = 30;
-
-        // Генерация вершин сферы
-        for (let latNumber = 0; latNumber <= latitudeBands; latNumber++) {
-            const theta = latNumber * Math.PI / latitudeBands;
-            const sinTheta = Math.sin(theta);
-            const cosTheta = Math.cos(theta);
-
-            for (let longNumber = 0; longNumber <= longitudeBands; longNumber++) {
-                const phi = longNumber * 2 * Math.PI / longitudeBands;
-                const sinPhi = Math.sin(phi);
-                const cosPhi = Math.cos(phi);
-
-                const x = cosPhi * sinTheta;
-                const y = cosTheta;
-                const z = sinPhi * sinTheta;
-
-                sphereVertices.push(radius * x);
-                sphereVertices.push(radius * y);
-                sphereVertices.push(radius * z);
+        function checkFilesLoaded() {
+            if (filesLoaded.model1 && filesLoaded.texture1 && filesLoaded.model2 && filesLoaded.texture2) {
+                document.getElementById('startButton').disabled = false;
+                document.getElementById('startButton').style.display = 'block';
             }
         }
 
-        // Генерация индексов для треугольников
-        for (let latNumber = 0; latNumber < latitudeBands; latNumber++) {
-            for (let longNumber = 0; longNumber < longitudeBands; longNumber++) {
-                const first = latNumber * (longitudeBands + 1) + longNumber;
-                const second = first + longitudeBands + 1;
-
-                sphereIndices.push(first);
-                sphereIndices.push(second);
-                sphereIndices.push(first + 1);
-
-                sphereIndices.push(second);
-                sphereIndices.push(second + 1);
-                sphereIndices.push(first + 1);
+        function setupModel(modelInfo, type) {
+            if (!gl) {
+                console.error('WebGL context is not initialized.');
+                return;
+            }
+            const vertices = [], texCoords = [], normals = [], indices = [];
+            modelInfo.faces.forEach(face => {
+                for (let i = 1; i < face.length - 1; i++) {
+                    const v1 = face[0];
+                    const v2 = face[i];
+                    const v3 = face[i + 1];
+                    vertices.push(...modelInfo.vertices[v1[0] - 1]);
+                    vertices.push(...modelInfo.vertices[v2[0] - 1]);
+                    vertices.push(...modelInfo.vertices[v3[0] - 1]);
+                    texCoords.push(...modelInfo.texCoords[v1[1] - 1]);
+                    texCoords.push(...modelInfo.texCoords[v2[1] - 1]);
+                    texCoords.push(...modelInfo.texCoords[v3[1] - 1]);
+                    normals.push(...modelInfo.normals[v1[2] - 1]);
+                    normals.push(...modelInfo.normals[v2[2] - 1]);
+                    normals.push(...modelInfo.normals[v3[2] - 1]);
+                }
+            });
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+            const normalBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
+            if (type === 'small') {
+                smallModel = { vertices: buffer, texCoords: texCoordBuffer, normals: normalBuffer, vertexCount: vertices.length / 3 };
+            } else {
+                bigModel = { vertices: buffer, texCoords: texCoordBuffer, normals: normalBuffer, vertexCount: vertices.length / 3 };
             }
         }
 
-        const positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphereVertices), gl.STATIC_DRAW);
+        function drawModel(model, texture, matrix) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, model.vertices);
+            const positionLocation = gl.getAttribLocation(program, 'aPosition');
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, model.texCoords);
+            const texCoordLocation = gl.getAttribLocation(program, 'aTexCoord');
+            gl.enableVertexAttribArray(texCoordLocation);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, model.normals);
+            const normalLocation = gl.getAttribLocation(program, 'aNormal');
+            gl.enableVertexAttribArray(normalLocation);
+            gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, 0, 0);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            const samplerLocation = gl.getUniformLocation(program, 'uSampler');
+            gl.uniform1i(samplerLocation, 0);
+            const modelViewMatrixLocation = gl.getUniformLocation(program, 'uModelViewMatrix');
+            gl.uniformMatrix4fv(modelViewMatrixLocation, false, matrix);
+            gl.drawArrays(gl.TRIANGLES, 0, model.vertexCount);
+        }
 
-        const indexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphereIndices), gl.STATIC_DRAW);
-
-        // Устанавливаем атрибуты
-        gl.enableVertexAttribArray(positionAttributeLocation);
-        gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
-
-        // Матрицы
-        const projectionMatrix = mat4.create();
-        const modelViewMatrix = mat4.create();
-
-        // Настройка камеры
-        let cameraPosition = vec3.fromValues(0, 0, 5);
-        let cameraTarget = vec3.fromValues(0, 0, 0);
-        let cameraUp = vec3.fromValues(0, 1, 0);
-
-        // Функция для обновления матрицы вида
         function updateModelViewMatrix() {
-            mat4.identity(modelViewMatrix);
+            const modelViewMatrix = mat4.create();
             mat4.lookAt(modelViewMatrix, cameraPosition, cameraTarget, cameraUp);
+            return modelViewMatrix;
         }
 
-        // Функция для обновления матрицы проекции
         function updateProjectionMatrix() {
-            mat4.perspective(projectionMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 1000.0);
+            const projectionMatrix = mat4.create();
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.1, 100.0);
+            return projectionMatrix;
         }
 
-        // Инициализация
-        function init() {
+        function render() {
+            if (!gl) {
+                console.error('WebGL context is not initialized.');
+                return;
+            }
             gl.clearColor(0.0, 0.0, 0.0, 1.0);
-            gl.enable(gl.DEPTH_TEST);
-
-            updateProjectionMatrix();
-            updateModelViewMatrix();
-        }
-
-        // Отрисовка
-        function draw() {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            gl.uniformMatrix4fv(modelViewMatrixUniformLocation, false, modelViewMatrix);
-            gl.uniformMatrix4fv(projectionMatrixUniformLocation, false, projectionMatrix);
+            const projectionMatrix = updateProjectionMatrix();
+            const projectionMatrixLocation = gl.getUniformLocation(program, 'uProjectionMatrix');
+            gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
 
-            gl.drawElements(gl.TRIANGLES, sphereIndices.length, gl.UNSIGNED_SHORT, 0);
+            // Отрисовка Солнца (большой объект)
+            if (bigModel && bigTexture) {
+                const modelViewMatrix = updateModelViewMatrix();
+                mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -20]); // Солнце дальше от камеры
+                mat4.scale(modelViewMatrix, modelViewMatrix, [3, 3, 3]); // Солнце больше
+                drawModel(bigModel, bigTexture, modelViewMatrix);
+            }
+
+            // Отрисовка планет
+            planets.forEach((planet, index) => {
+                const modelViewMatrix = updateModelViewMatrix();
+                mat4.translate(modelViewMatrix, modelViewMatrix, [planet.orbitRadius * Math.cos(planet.orbitAngle), 0, planet.orbitRadius * Math.sin(planet.orbitAngle) - 20]);
+                mat4.rotate(modelViewMatrix, modelViewMatrix, planet.angle, [0, 1, 0]);
+                mat4.scale(modelViewMatrix, modelViewMatrix, [planet.size, planet.size, planet.size]);
+                drawModel(smallModel, smallTexture, modelViewMatrix);
+            });
+            requestAnimationFrame(render);
         }
 
-        // Обработка событий клавиатуры
-        const cameraSpeed = 0.1;
-        const rotationSpeed = 0.05;
+        function initPlanets() {
+            const orbitRadii = [5, 8, 12, 16, 20]; // Радиусы орбит планет
+            for (let i = 0; i < 5; i++) {
+                planets.push({
+                    size: 0.5 + Math.random() * 0.5, // Размер планеты
+                    orbitRadius: orbitRadii[i], // Радиус орбиты
+                    orbitAngle: (i * 2 * Math.PI) / 5, // Начальный угол орбиты
+                    angle: 0 // Угол вращения вокруг своей оси
+                });
+            }
+        }
+
+        function animate() {
+            planets.forEach(planet => {
+                planet.orbitAngle += 0.005; // Вращение вокруг Солнца
+                planet.angle += 0.01; // Вращение вокруг своей оси
+            });
+            requestAnimationFrame(animate);
+        }
 
         function handleKeyDown(event) {
             const direction = vec3.create();
@@ -208,11 +318,8 @@
                     vec3.scaleAndAdd(cameraTarget, cameraTarget, direction, -cameraSpeed);
                     break;
             }
-
-            updateModelViewMatrix();
         }
 
-        // Обработка событий мыши для поворота камеры
         let lastMousePosition = null;
 
         function handleMouseMove(event) {
@@ -228,8 +335,6 @@
                 vec3.subtract(direction, cameraTarget, cameraPosition);
                 vec3.transformMat4(direction, direction, rotationMatrix);
                 vec3.add(cameraTarget, cameraPosition, direction);
-
-                updateModelViewMatrix();
             }
 
             lastMousePosition = { x: event.clientX, y: event.clientY };
@@ -239,18 +344,54 @@
             lastMousePosition = null;
         }
 
-        // Инициализация и запуск
-        init();
-        document.addEventListener('keydown', handleKeyDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        window.onload = function() {
+            initWebGL();
 
-        function renderLoop() {
-            draw();
-            requestAnimationFrame(renderLoop);
-        }
+            document.getElementById('model1').addEventListener('change', function(event) {
+                loadModel(event.target.files[0], function(model) {
+                    smallModelInfo = model;
+                    setupModel(smallModelInfo, 'small');
+                    filesLoaded.model1 = true;
+                    checkFilesLoaded();
+                });
+            });
 
-        renderLoop();
+            document.getElementById('texture1').addEventListener('change', function(event) {
+                loadTexture(event.target.files[0], function(texture) {
+                    smallTexture = texture;
+                    filesLoaded.texture1 = true;
+                    checkFilesLoaded();
+                });
+            });
+
+            document.getElementById('model2').addEventListener('change', function(event) {
+                loadModel(event.target.files[0], function(model) {
+                    bigModelInfo = model;
+                    setupModel(bigModelInfo, 'big');
+                    filesLoaded.model2 = true;
+                    checkFilesLoaded();
+                });
+            });
+
+            document.getElementById('texture2').addEventListener('change', function(event) {
+                loadTexture(event.target.files[0], function(texture) {
+                    bigTexture = texture;
+                    filesLoaded.texture2 = true;
+                    checkFilesLoaded();
+                });
+            });
+
+            document.getElementById('startButton').addEventListener('click', function() {
+                initPlanets();
+                animate();
+                render();
+            });
+
+            // Добавьте обработчики событий для камеры
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        };
     </script>
 </body>
 </html>
